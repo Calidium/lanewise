@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>LaneWise — navigation for new drivers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root {
+    --asphalt: #22262B;
+    --asphalt-2: #2E333A;
+    --ink: #1A1D22;
+    --ink-soft: #5C6570;
+    --surface: #EEF1F4;
+    --card: #FFFFFF;
+    --route-green: #1B6E4C;
+    --route-green-bright: #2FA372;
+    --lane-paint: #F5F5F0;
+    --caution: #C6791F;
+    --danger: #C94A3E;
+    --line: #DDE2E6;
+    --font-display: 'Overpass', system-ui, sans-serif;
+    --font-body: 'Public Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    color: var(--ink);
+    background: linear-gradient(180deg, #E4E9ED 0%, #EEF1F4 45%);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px 12px;
+    min-height: 100dvh;
+  }
+  button, input { font-family: inherit; }
+  button { cursor: pointer; }
+  a { color: inherit; }
+  :focus-visible { outline: 2.5px solid #4C8EFF; outline-offset: 2px; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    max-width: 412px;
+    height: min(870px, calc(100dvh - 24px));
+    background: var(--surface);
+    border-radius: 26px;
+    box-shadow: 0 30px 60px -20px rgba(20, 30, 40, 0.35), 0 0 0 1px rgba(20,30,40,0.05);
+    overflow: hidden;
+  }
+
+  .screen { display: flex; flex-direction: column; height: 100%; width: 100%; }
+  .screen[hidden] { display: none; }
+
+  /* ---------- Search screen ---------- */
+  .screen-search { padding: 26px 22px 20px; overflow-y: auto; }
+
+  .brand { display: flex; align-items: center; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--route-green);
+    display: flex; align-items: center; justify-content: center; margin-right: 10px; flex-shrink: 0;
+  }
+  .brand-name { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: -0.01em; }
+
+  .hero-card { margin-top: 20px; background: var(--asphalt); border-radius: 20px; padding: 18px 18px 14px; }
+  .hero-lanes { display: flex; justify-content: center; }
+  .hero-lanes .lane-tile { margin-right: 7px; }
+  .hero-lanes .lane-tile:last-child { margin-right: 0; }
+  .hero-caption { text-align: center; color: #AEB6BF; font-size: 12px; margin-top: 10px; font-family: var(--font-mono); }
+  .hero-caption b { color: var(--lane-paint); font-weight: 600; }
+
+  h1.headline {
+    font-family: var(--font-display); font-weight: 800; font-size: 25px; line-height: 1.18;
+    letter-spacing: -0.015em; margin: 20px 0 8px;
+  }
+  p.subtext { font-size: 14px; line-height: 1.5; color: var(--ink-soft); margin: 0 0 20px; }
+
+  .field { margin-bottom: 12px; position: relative; }
+  .field label {
+    display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
+  }
+  .field-row {
+    display: flex; align-items: stretch; background: var(--card);
+    border: 1.5px solid var(--line); border-radius: 14px; overflow: hidden;
+  }
+  .field-row input {
+    flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+    font-size: 15px; color: var(--ink); padding: 12px 14px;
+  }
+  .field-row input::placeholder { color: #98A1AA; }
+  .field-row.focused { border-color: var(--route-green); }
+  .locate-btn {
+    border: none; background: transparent; width: 44px; display: flex;
+    align-items: center; justify-content: center; color: var(--route-green);
+    border-left: 1.5px solid var(--line); flex-shrink: 0;
+  }
+  .locate-btn.loading { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .location-status {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card); border: 1.5px solid var(--line); border-radius: 14px;
+    padding: 11px 14px; font-size: 13.5px; font-weight: 600; margin-bottom: 12px;
+  }
+  .location-status.is-error { border-color: #F2CBC6; background: #FBEAE8; color: var(--danger); }
+  .location-status .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--route-green-bright);
+    display: inline-block; margin-right: 8px; flex-shrink: 0;
+  }
+  .location-status.is-loading .dot { background: var(--caution); animation: pulse 1.2s ease-in-out infinite; }
+  .location-status.is-error .dot { background: var(--danger); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .location-status-text { display: flex; align-items: center; }
+  .link-btn {
+    border: none; background: none; color: var(--route-green); font-weight: 700;
+    font-size: 13px; padding: 4px 6px; flex-shrink: 0; text-decoration: underline;
+  }
+  .field[hidden] { display: none; }
+
+  .suggestions {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    list-style: none; margin: 0; padding: 4px; box-shadow: 0 12px 24px -8px rgba(20,30,40,.25);
+    max-height: 260px; overflow-y: auto;
+  }
+  .suggestions[hidden] { display: none; }
+  .suggestions li {
+    padding: 10px 10px; font-size: 13.5px; line-height: 1.35; border-radius: 8px; cursor: pointer;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  .suggestions li:hover, .suggestions li.active { background: var(--surface); }
+  .suggestions li .sugg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggestions li .sugg-dist {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--route-green); flex-shrink: 0; font-weight: 600;
+  }
+
+  .btn-primary {
+    width: 100%; border: none; border-radius: 14px; background: var(--route-green);
+    color: white; font-family: var(--font-display); font-weight: 700; font-size: 15.5px;
+    padding: 14px; margin-top: 6px; display: flex; align-items: center; justify-content: center;
+  }
+  .btn-primary:disabled { opacity: 0.65; }
+  .btn-primary .spinner {
+    width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.4);
+    border-top-color: white; margin-right: 9px; animation: spin 0.7s linear infinite;
+  }
+
+  .form-error {
+    background: #FBEAE8; color: var(--danger); border: 1px solid #F2CBC6; border-radius: 12px;
+    font-size: 13px; padding: 10px 12px; margin-top: 12px; line-height: 1.4;
+  }
+  .form-error[hidden] { display: none; }
+
+  .attribution-note { font-size: 11px; line-height: 1.5; color: #8B95A0; margin-top: 16px; text-align: center; }
+  .attribution-note a { color: var(--ink-soft); text-decoration: underline; }
+
+  /* ---------- Nav screen (map + sheet) ---------- */
+  .screen-nav { position: relative; }
+  .map-area { height: 34%; min-height: 190px; flex-shrink: 0; position: relative; background: #C8D3D8; }
+  #map { width: 100%; height: 100%; }
+  .map-back {
+    position: absolute; top: 14px; left: 14px; z-index: 500; width: 40px; height: 40px;
+    border-radius: 12px; background: white; border: none; box-shadow: 0 4px 10px rgba(0,0,0,.2);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .sheet { flex: 1; overflow-y: auto; background: var(--surface); }
+  .panel { padding: 18px 20px 26px; }
+  .panel[hidden] { display: none; }
+
+  .trip-summary { display: flex; align-items: baseline; }
+  .trip-time { font-family: var(--font-display); font-weight: 800; font-size: 24px; margin-right: 8px; }
+  .trip-dist { font-weight: 600; font-size: 14px; color: var(--ink-soft); }
+
+  .steps-header {
+    font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase;
+    letter-spacing: 0.06em; margin: 20px 0 10px;
+  }
+
+  .step-card { background: var(--card); border-radius: 16px; padding: 13px; margin-bottom: 9px; border: 1px solid var(--line); }
+  .step-card-main { display: flex; align-items: flex-start; }
+  .step-icon {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--asphalt); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; margin-right: 11px; margin-top: 1px;
+  }
+  .step-instruction { font-weight: 700; font-size: 14.5px; line-height: 1.3; }
+  .step-distance { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+
+  .lane-guidance { margin-top: 11px; padding-top: 11px; border-top: 1px dashed var(--line); }
+  .lane-tiles { display: flex; }
+  .lane-tile { border-radius: 11px; display: flex; align-items: center; justify-content: center; margin-right: 6px; flex-shrink: 0; position: relative; }
+  .lane-tile:last-child { margin-right: 0; }
+  .lane-tile.is-legal-not-best { box-shadow: 0 0 0 2px var(--route-green-bright); }
+  .lane-best-chip {
+    position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
+    background: var(--route-green-bright); color: white; font-size: 8.5px; font-weight: 800;
+    letter-spacing: 0.04em; padding: 2px 6px; border-radius: 6px; white-space: nowrap;
+  }
+  .lane-message { font-size: 12.5px; font-weight: 600; margin-top: 9px; }
+  .lane-fallback { font-size: 12px; color: var(--ink-soft); font-style: italic; line-height: 1.4; }
+
+  /* Drive mode */
+  .drive-progress { display: flex; align-items: center; justify-content: space-between; }
+  .drive-progress-label { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .btn-icon {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); display: flex; align-items: center; justify-content: center;
+  }
+  .drive-distance { font-family: var(--font-mono); color: var(--caution); font-weight: 700; font-size: 14px; margin-top: 18px; letter-spacing: 0.02em; }
+  .drive-instruction { font-family: var(--font-display); font-weight: 800; font-size: 22px; line-height: 1.22; margin-top: 5px; }
+  .drive-lanes { display: flex; margin-top: 18px; }
+  .drive-lanes .lane-tile { margin-right: 8px; }
+  .drive-message { font-size: 14.5px; font-weight: 600; line-height: 1.4; margin-top: 14px; }
+  .drive-next { margin-top: 18px; }
+
+  .gps-status {
+    display: flex; align-items: center; font-size: 12px; color: var(--ink-soft);
+    font-weight: 600; margin-top: 14px;
+  }
+  .gps-status .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--route-green-bright);
+    margin-right: 7px; flex-shrink: 0;
+  }
+  .gps-status.is-searching .dot { background: var(--caution); animation: pulse 1.2s ease-in-out infinite; }
+  .gps-status.is-off .dot { background: #B7BFC7; }
+
+  .btn-secondary {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 14px; background: transparent;
+    color: var(--ink-soft); font-family: var(--font-display); font-weight: 700; font-size: 14px;
+    padding: 11px; margin-top: 10px; display: flex; align-items: center; justify-content: center;
+  }
+  .btn-secondary.is-primary-fallback { border-color: var(--route-green); color: var(--route-green); }
+
+  .user-puck { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
+  .user-puck-ring {
+    position: absolute; width: 20px; height: 20px; border-radius: 50%;
+    background: rgba(76, 142, 255, 0.28); animation: puck-pulse 1.8s ease-out infinite;
+  }
+  .user-puck-dot {
+    width: 14px; height: 14px; border-radius: 50%; background: #4C8EFF;
+    border: 3px solid white; box-shadow: 0 1px 4px rgba(0,0,0,.35); position: relative; z-index: 1;
+  }
+  @keyframes puck-pulse { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(2.2); opacity: 0; } }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #C7CED4; border-radius: 3px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .locate-btn.loading, .btn-primary .spinner, .location-status.is-loading .dot,
+    .gps-status.is-searching .dot, .user-puck-ring { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ============ SEARCH SCREEN ============ -->
+  <section class="screen" id="screen-search">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 21 V6 M12 6 L6 12 M12 6 L18 12"/>
+        </svg>
+      </div>
+      <span class="brand-name">LaneWise</span>
+    </div>
+
+    <div class="hero-card">
+      <div class="hero-lanes" id="hero-lanes"></div>
+      <div class="hero-caption">→ <b>5th Ave</b>, 0.4 mi ahead</div>
+    </div>
+
+    <h1 class="headline">Know your lane<br>before you need it.</h1>
+    <p class="subtext">Turn-by-turn directions built for new drivers — see which lane to be in before every turn, not after.</p>
+
+    <form id="search-form" novalidate>
+      <div class="location-status is-loading" id="location-status">
+        <span class="location-status-text"><span class="dot"></span><span id="location-status-text">Finding your location…</span></span>
+        <button type="button" class="link-btn" id="btn-change-origin">Change</button>
+      </div>
+
+      <div class="field" id="field-from" hidden>
+        <label for="input-from">From</label>
+        <div class="field-row" id="row-from">
+          <input type="text" id="input-from" placeholder="Starting point" autocomplete="off" />
+        </div>
+        <ul class="suggestions" id="suggest-from" hidden></ul>
+      </div>
+
+      <div class="field">
+        <label for="input-to">Destination</label>
+        <div class="field-row" id="row-to">
+          <input type="text" id="input-to" placeholder="Address, or a place like &quot;Walmart&quot;" autocomplete="off" />
+        </div>
+        <ul class="suggestions" id="suggest-to" hidden></ul>
+      </div>
+
+      <button type="submit" class="btn-primary" id="btn-route"><span id="btn-route-label">Find my route</span></button>
+      <p class="form-error" id="form-error" hidden></p>
+    </form>
+
+    <p class="attribution-note">Map, geocoding &amp; routing: OpenStreetMap contributors, via the free public Nominatim &amp; OSRM community services — built for prototypes, not heavy traffic. <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noopener">Nominatim usage policy ↗</a></p>
+  </section>
+
+  <!-- ============ NAV SCREEN (map + sheet) ============ -->
+  <section class="screen" id="screen-nav" hidden>
+    <div class="map-area">
+      <div id="map"></div>
+      <button class="map-back" id="btn-map-back" aria-label="Back to search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A1D22" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+    </div>
+
+    <div class="sheet">
+      <div class="panel" id="panel-route">
+        <div class="trip-summary"><span class="trip-time" id="trip-time">—</span><span class="trip-dist" id="trip-dist"></span></div>
+        <button class="btn-primary" id="btn-start-drive">Start drive</button>
+        <div class="steps-header">Turns on this route</div>
+        <div id="steps-list"></div>
+      </div>
+
+      <div class="panel" id="panel-drive" hidden>
+        <div class="drive-progress">
+          <button class="btn-icon" id="btn-exit-drive" aria-label="Exit drive mode">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A1D22" stroke-width="2.3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+          <div class="drive-progress-label" id="drive-progress-label"></div>
+          <div style="width:36px"></div>
+        </div>
+        <div class="drive-distance" id="drive-distance"></div>
+        <div class="drive-instruction" id="drive-instruction"></div>
+        <div class="drive-lanes" id="drive-lanes"></div>
+        <div class="drive-message" id="drive-message"></div>
+        <div class="gps-status is-searching" id="gps-status"><span class="dot"></span><span id="gps-status-text">Finding GPS signal…</span></div>
+        <button class="btn-secondary drive-next" id="btn-next-step">Skip to next turn →</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     Lane-guidance + instruction logic
+     (ported from a standalone module unit-tested against the
+     official OSRM API docs example before being embedded here)
+     ========================================================= */
+
+  function norm(s) { return String(s || '').toLowerCase().trim().replace(/\s+/g, '_'); }
+  function isValidLane(lane) { return lane.valid === true || lane.valid === 'true'; }
+
+  function directionWord(modifier) {
+    const map = {
+      uturn: 'a U-turn', sharp_left: 'a sharp left', left: 'left', slight_left: 'a slight left',
+      straight: 'straight', slight_right: 'a slight right', right: 'right', sharp_right: 'a sharp right',
+    };
+    return map[norm(modifier)] || 'ahead';
+  }
+
+  function describeStep(step) {
+    const man = step.maneuver || {};
+    const type = norm(man.type);
+    const mod = man.modifier;
+    const name = step.name && step.name.trim() ? step.name.trim() : null;
+    const onName = name ? ` onto ${name}` : '';
+    const continueName = name ? ` on ${name}` : '';
+    switch (type) {
+      case 'depart': return name ? `Head out on ${name}` : 'Start your route';
+      case 'arrive': return "You've arrived";
+      case 'turn': return `Turn ${directionWord(mod)}${onName}`;
+      case 'new_name': return `Continue${continueName}`;
+      case 'merge': return `Merge ${directionWord(mod)}${onName}`;
+      case 'on_ramp': return `Take the ramp${onName}`;
+      case 'off_ramp': return `Take the exit${onName}`;
+      case 'fork': return `Keep ${directionWord(mod)} at the fork${onName}`;
+      case 'end_of_road': return `At the end of the road, turn ${directionWord(mod)}${onName}`;
+      case 'use_lane': return `Get in the correct lane to continue${continueName}`;
+      case 'continue': return mod && norm(mod) === 'straight' ? `Continue straight${continueName}` : `Continue ${directionWord(mod)}${onName}`;
+      case 'roundabout':
+      case 'rotary': return man.exit ? `At the roundabout, take exit ${man.exit}${onName}` : `Enter the roundabout${onName}`;
+      case 'roundabout_turn': return `At the mini-roundabout, turn ${directionWord(mod)}${onName}`;
+      case 'notification': return name ? `Continue${continueName}` : 'Continue';
+      default: return `Turn ${directionWord(mod)}${onName}`; // unknown types: handle like "turn" per OSRM docs
+    }
+  }
+
+  function ordinal(n) {
+    const s = ['th', 'st', 'nd', 'rd']; const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  // `bias` ('left'|'right'|null): when >1 lane is legally valid, narrow the
+  // RECOMMENDATION to the one lane that best sets up the NEXT maneuver,
+  // without ever calling a legal lane "invalid" just because it's not optimal.
+  function analyzeLanes(lanes, bias) {
+    if (!Array.isArray(lanes) || lanes.length === 0) return { available: false };
+    const flags = lanes.map(isValidLane);
+    const n = lanes.length;
+    const validIdx = flags.reduce((acc, v, i) => (v ? acc.concat(i) : acc), []);
+    const isContiguous = validIdx.every((v, i) => i === 0 || v === validIdx[i - 1] + 1);
+    const allValid = validIdx.length === n;
+    const noneValid = validIdx.length === 0;
+
+    let recommendedIdx = validIdx.slice();
+    let narrowed = false;
+    if (!noneValid && validIdx.length > 1 && (isContiguous || allValid) && (bias === 'left' || bias === 'right')) {
+      recommendedIdx = bias === 'left' ? [validIdx[0]] : [validIdx[validIdx.length - 1]];
+      narrowed = true;
+    }
+
+    const cleaned = lanes.map((l, i) => ({
+      indications: (l.indications || []).map(norm),
+      valid: flags[i],
+      recommended: recommendedIdx.indexOf(i) !== -1,
+    }));
+
+    if (noneValid) {
+      return { available: true, lanes: cleaned, message: 'Lane info looks incomplete for this turn — merge early to be safe.' };
+    }
+    if (allValid && !narrowed) {
+      return { available: true, lanes: cleaned, message: 'Any lane works here — no restriction.' };
+    }
+
+    const sideLabel = (i) => (i === 0 ? 'LEFT' : i === n - 1 ? 'RIGHT' : `${ordinal(i + 1)}-from-left`);
+    if (allValid && narrowed) {
+      const i = recommendedIdx[0];
+      return {
+        available: true, lanes: cleaned, narrowed,
+        message: `Any lane works here, but favor the ${sideLabel(i)} lane — it lines up with your next turn.`,
+      };
+    }
+
+    const leftmost = validIdx[0] === 0;
+    const rightmost = validIdx[validIdx.length - 1] === n - 1;
+    let where; let extra = '';
+    if (recommendedIdx.length === 1) {
+      const i = recommendedIdx[0];
+      if (i === 0) where = 'the LEFT lane';
+      else if (i === n - 1) where = 'the RIGHT lane';
+      else where = `the ${ordinal(i + 1)} lane from the left`;
+      if (narrowed) extra = " That lines up with your next turn, so you won't need to shift lanes again.";
+    } else if (isContiguous && leftmost) where = `one of the ${validIdx.length} LEFT lanes`;
+    else if (isContiguous && rightmost) where = `one of the ${validIdx.length} RIGHT lanes`;
+    else if (isContiguous) where = 'one of the center lanes';
+    else where = 'a highlighted lane';
+
+    return { available: true, lanes: cleaned, message: `Get into ${where}.${extra}`, where, narrowed };
+  }
+
+  // ---- Look-ahead bias: which side sets up the NEXT maneuver? ----
+  function directionalBias(modifier) {
+    const m = norm(modifier);
+    if (m === 'left' || m === 'slight_left' || m === 'sharp_left') return 'left';
+    if (m === 'right' || m === 'slight_right' || m === 'sharp_right') return 'right';
+    return null;
+  }
+  function rawLaneBias(lanes) {
+    if (!Array.isArray(lanes) || !lanes.length) return null;
+    const n = lanes.length;
+    const validIdx = [];
+    lanes.forEach((l, i) => { if (isValidLane(l)) validIdx.push(i); });
+    if (!validIdx.length || validIdx.length === n) return null;
+    const avg = validIdx.reduce((a, b) => a + b, 0) / validIdx.length;
+    const mid = (n - 1) / 2;
+    if (avg < mid - 0.15) return 'left';
+    if (avg > mid + 0.15) return 'right';
+    return null;
+  }
+  function nextStepBias(nextRawStep) {
+    if (!nextRawStep) return null;
+    const modBias = directionalBias(nextRawStep.maneuver && nextRawStep.maneuver.modifier);
+    if (modBias) return modBias;
+    const nextIntersection = (nextRawStep.intersections || [])[0];
+    return rawLaneBias(nextIntersection && nextIntersection.lanes);
+  }
+
+  function laneGuidanceForStep(step, bias) {
+    const first = (step.intersections || [])[0];
+    if (!first || !first.lanes) return { available: false };
+    return analyzeLanes(first.lanes, bias || null);
+  }
+
+  /* =========================================================
+     Parametric arrow glyphs
+     (one angle-driven function so every direction is a true
+     mirror and the arrowhead is always tangent to the curve)
+     ========================================================= */
+
+  const ANGLES = { straight: 0, slight_left: -32, left: -60, sharp_left: -100, slight_right: 32, right: 60, sharp_right: 100 };
+
+  function arrowPath(indication, opts) {
+    opts = opts || {};
+    const cx = opts.cx != null ? opts.cx : 12, startY = opts.startY != null ? opts.startY : 24, R = opts.R != null ? opts.R : 15.5;
+    const headLen = opts.headLen != null ? opts.headLen : 4.6, headWidth = opts.headWidth != null ? opts.headWidth : 3.9;
+
+    if (indication === 'none') return { shaft: `M ${cx} ${startY} L ${cx} ${startY - 6}`, head: '' };
+
+    if (indication === 'uturn') {
+      const shaft = `M ${cx} ${startY} C ${cx} ${startY - R * 1.3}, ${cx + R} ${startY - R * 1.3}, ${cx + R} ${startY - R * 0.55} C ${cx + R} ${startY - R * 0.1}, ${cx + R - 3} ${startY + 1}, ${cx + R - 5} ${startY - 1}`;
+      const tipX = cx + R - 5, tipY = startY - 1, dx = -0.7, dy = 0.7, px = -dy, py = dx;
+      const backX = tipX - dx * headLen, backY = tipY - dy * headLen;
+      const head = `M ${tipX} ${tipY} L ${backX + px * headWidth} ${backY + py * headWidth} M ${tipX} ${tipY} L ${backX - px * headWidth} ${backY - py * headWidth}`;
+      return { shaft, head };
+    }
+
+    const angle = ANGLES[indication] !== undefined ? ANGLES[indication] : 0;
+    const rad = (angle * Math.PI) / 180;
+    const dx = Math.sin(rad), dy = -Math.cos(rad);
+    const endX = cx + R * dx, endY = startY + R * dy;
+    const ctrlX = cx, ctrlY = startY - R * 0.68;
+    const shaft = `M ${cx} ${startY} Q ${ctrlX} ${ctrlY}, ${endX} ${endY}`;
+    let tx = endX - ctrlX, ty = endY - ctrlY;
+    const len = Math.hypot(tx, ty) || 1; tx /= len; ty /= len;
+    const px = -ty, py = tx;
+    const backX = endX - tx * headLen, backY = endY - ty * headLen;
+    const head = `M ${endX} ${endY} L ${backX + px * headWidth} ${backY + py * headWidth} M ${endX} ${endY} L ${backX - px * headWidth} ${backY - py * headWidth}`;
+    return { shaft, head };
+  }
+
+  function laneTileHTML(lane, w, h, showChip) {
+    // recommended: the single best pick -> bright green fill, white icon
+    // valid but not recommended: legal, just not optimal -> dark fill, green outline, muted-green icon
+    // not valid: dark fill, dim gray icon, no outline
+    const recommended = lane.recommended !== undefined ? lane.recommended : lane.valid;
+    let bg, ringClass = '', color;
+    if (recommended) { bg = 'var(--route-green)'; color = '#FFFFFF'; }
+    else if (lane.valid) { bg = 'var(--asphalt-2)'; ringClass = ' is-legal-not-best'; color = '#7FC4A4'; }
+    else { bg = 'var(--asphalt-2)'; color = '#6B7480'; }
+    const ring = recommended ? 'box-shadow:0 0 0 2px var(--route-green-bright);' : '';
+
+    const inds = (lane.indications && lane.indications.length) ? lane.indications : ['none'];
+    const n = inds.length, slotW = 24, vbW = n * slotW;
+    const paths = inds.map((ind, j) => {
+      const cx = slotW * j + slotW / 2;
+      const p = arrowPath(ind, { cx: cx, startY: 24, R: n > 1 ? 10 : 15.5 });
+      return `<path d="${p.shaft}"/>${p.head ? `<path d="${p.head}"/>` : ''}`;
+    }).join('');
+    const iconW = Math.round(w * (n > 1 ? 0.62 : 0.46));
+    const chip = (showChip && recommended) ? '<span class="lane-best-chip">BEST</span>' : '';
+    return `<div class="lane-tile${ringClass}" style="width:${w}px;height:${h}px;background:${bg};${ring}">${chip}
+      <svg width="${iconW}" height="${Math.round(h * 0.4)}" viewBox="0 0 ${vbW} 28" preserveAspectRatio="xMidYMax meet">
+        <g stroke="${color}" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
+      </svg>
+    </div>`;
+  }
+
+  function maneuverIconSVG(modifier) {
+    const validSet = ['uturn','sharp_left','left','slight_left','straight','slight_right','right','sharp_right'];
+    const ind = validSet.indexOf(norm(modifier)) !== -1 ? norm(modifier) : 'straight';
+    const p = arrowPath(ind, { cx: 12, startY: 22, R: 13.5 });
+    return `<svg width="17" height="17" viewBox="0 0 24 26"><g stroke="#F5F5F0" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="${p.shaft}"/>${p.head ? `<path d="${p.head}"/>` : ''}</g></svg>`;
+  }
+  function dotIconSVG() { return `<svg width="13" height="13" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#F5F5F0"/></svg>`; }
+  function flagIconSVG() { return `<svg width="15" height="15" viewBox="0 0 24 24"><g stroke="#F5F5F0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/></g></svg>`; }
+
+  /* =========================================================
+     Formatting helpers
+     ========================================================= */
+
+  function formatDistance(meters) {
+    const miles = meters / 1609.344;
+    if (miles < 0.1) { const feet = Math.max(50, Math.round((meters * 3.28084) / 50) * 50); return `${feet} ft`; }
+    return `${miles.toFixed(1)} mi`;
+  }
+  function formatDuration(seconds) {
+    const mins = Math.round(seconds / 60);
+    if (mins < 60) return `${mins} min`;
+    return `${Math.floor(mins / 60)} hr ${mins % 60} min`;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function shortLabel(displayName) { return displayName.split(',').map(s => s.trim()).slice(0, 3).join(', '); }
+
+  /* =========================================================
+     App state + DOM refs
+     ========================================================= */
+
+  const state = {
+    userLocation: null, originOverridden: false, from: null, to: null, route: null, steps: [], currentStep: 1,
+    map: null, routeLayer: null, markers: [], userMarker: null, watchId: null, advancing: false,
+  };
+  const $ = id => document.getElementById(id);
+  const els = {
+    screenSearch: $('screen-search'), screenNav: $('screen-nav'),
+    form: $('search-form'), inputFrom: $('input-from'), inputTo: $('input-to'),
+    fieldFrom: $('field-from'), rowFrom: $('row-from'), rowTo: $('row-to'),
+    suggestFrom: $('suggest-from'), suggestTo: $('suggest-to'),
+    locationStatus: $('location-status'), locationStatusText: $('location-status-text'),
+    btnChangeOrigin: $('btn-change-origin'),
+    btnRoute: $('btn-route'), btnRouteLabel: $('btn-route-label'),
+    formError: $('form-error'),
+    mapBack: $('btn-map-back'),
+    panelRoute: $('panel-route'), panelDrive: $('panel-drive'),
+    tripTime: $('trip-time'), tripDist: $('trip-dist'),
+    btnStartDrive: $('btn-start-drive'), stepsList: $('steps-list'),
+    btnExitDrive: $('btn-exit-drive'), driveProgressLabel: $('drive-progress-label'),
+    driveDistance: $('drive-distance'), driveInstruction: $('drive-instruction'),
+    driveLanes: $('drive-lanes'), driveMessage: $('drive-message'), btnNextStep: $('btn-next-step'),
+    gpsStatus: $('gps-status'), gpsStatusText: $('gps-status-text'),
+  };
+
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000, toRad = d => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    const a = Math.pow(Math.sin(dLat / 2), 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.pow(Math.sin(dLon / 2), 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  /* =========================================================
+     Hero illustration (static preview on the search screen)
+     ========================================================= */
+  $('hero-lanes').innerHTML = [
+    laneTileHTML({ indications: ['straight'], valid: false }, 46, 66),
+    laneTileHTML({ indications: ['left'], valid: true }, 46, 66),
+    laneTileHTML({ indications: ['straight'], valid: false }, 46, 66),
+    laneTileHTML({ indications: ['straight', 'right'], valid: false }, 46, 66),
+  ].join('');
+
+  /* =========================================================
+     Location-first: get the user's position once on load, use it
+     as the default origin, and bias nearby-place search around it.
+     ========================================================= */
+
+  function setLocationStatus(kind, text) {
+    els.locationStatus.classList.remove('is-loading', 'is-error');
+    if (kind === 'loading') els.locationStatus.classList.add('is-loading');
+    if (kind === 'error') els.locationStatus.classList.add('is-error');
+    els.locationStatusText.textContent = text;
+  }
+
+  function useManualOrigin(reason) {
+    els.fieldFrom.hidden = false;
+    els.btnChangeOrigin.textContent = 'Use my location';
+    if (reason) setLocationStatus('error', reason);
+  }
+
+  function requestLocation(isRetry) {
+    if (!navigator.geolocation) { useManualOrigin("Location isn't supported in this browser — enter a starting point."); return; }
+    setLocationStatus('loading', 'Finding your location…');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        state.userLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        // If the user already opted to type their own start (and this isn't
+        // the retry they explicitly asked for), don't clobber their in-progress input.
+        if (state.originOverridden && !isRetry) return;
+        state.originOverridden = false;
+        state.from = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: 'Current location' };
+        els.fieldFrom.hidden = true;
+        els.btnChangeOrigin.textContent = 'Change';
+        setLocationStatus('ok', '📍 Using your current location');
+      },
+      () => useManualOrigin("Couldn't access your location — enter a starting point below."),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  els.btnChangeOrigin.addEventListener('click', () => {
+    if (els.fieldFrom.hidden) {
+      // Was auto; let them override manually
+      state.from = null;
+      state.originOverridden = true;
+      els.fieldFrom.hidden = false;
+      els.btnChangeOrigin.textContent = 'Use my location';
+      els.inputFrom.focus();
+    } else if (!state.userLocation) {
+      requestLocation(true);
+    } else {
+      // Revert to the already-known current location
+      state.originOverridden = false;
+      state.from = { lat: state.userLocation.lat, lon: state.userLocation.lon, label: 'Current location' };
+      els.fieldFrom.hidden = true;
+      els.btnChangeOrigin.textContent = 'Change';
+      setLocationStatus('ok', '📍 Using your current location');
+    }
+  });
+
+  requestLocation(false);
+
+  /* =========================================================
+     Geocoding (Nominatim) + autocomplete
+     ========================================================= */
+
+  const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+  const acState = { from: { timer: null, token: 0 }, to: { timer: null, token: 0 } };
+
+  function viewboxAround(lat, lon, degOffset) {
+    const d = degOffset || 0.2;
+    return `${lon - d},${lat + d},${lon + d},${lat - d}`; // left,top,right,bottom
+  }
+
+  async function geocodeOne(query) {
+    let url = `${NOMINATIM}?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    if (state.userLocation) url += `&viewbox=${viewboxAround(state.userLocation.lat, state.userLocation.lon)}`;
+    let res;
+    try { res = await fetch(url, { headers: { Accept: 'application/json' } }); }
+    catch (e) { throw new Error('Search is having trouble reaching the map service. Check your connection and try again.'); }
+    if (!res.ok) throw new Error('Search is having trouble right now. Try again in a moment.');
+    const data = await res.json();
+    if (!data || !data.length) throw new Error(`Couldn't find "${query}". Try adding a city or zip code.`);
+    const r = data[0];
+    return { lat: parseFloat(r.lat), lon: parseFloat(r.lon), label: r.display_name };
+  }
+
+  function wireAutocomplete(input, key) {
+    const listEl = key === 'from' ? els.suggestFrom : els.suggestTo;
+    input.addEventListener('focus', () => { const row = key === 'from' ? els.rowFrom : els.rowTo; row.classList.add('focused'); });
+    input.addEventListener('blur', () => {
+      const row = key === 'from' ? els.rowFrom : els.rowTo; row.classList.remove('focused');
+      setTimeout(() => { listEl.hidden = true; }, 150);
+    });
+    input.addEventListener('input', () => {
+      state[key] = null;
+      const q = input.value.trim();
+      clearTimeout(acState[key].timer);
+      if (q.length < 3) { listEl.innerHTML = ''; listEl.hidden = true; return; }
+      acState[key].timer = setTimeout(() => runSearch(q, key), 450); // debounced well under Nominatim's 1 req/sec limit
+    });
+  }
+
+  async function fetchNominatim(query, opts) {
+    let url = `${NOMINATIM}?format=json&limit=${opts.limit || 5}&q=${encodeURIComponent(query)}`;
+    if (opts.viewbox) url += `&viewbox=${opts.viewbox}${opts.bounded ? '&bounded=1' : ''}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    return res.json();
+  }
+
+  // Typing a brand/place name (e.g. "walmart") with a known location should
+  // surface NEARBY matches sorted by actual distance, not one arbitrary
+  // global result. Try a tight bounded search first; widen if nothing's close.
+  async function runSearch(query, key) {
+    const myToken = ++acState[key].token;
+    const listEl = key === 'from' ? els.suggestFrom : els.suggestTo;
+    let data;
+    try {
+      if (state.userLocation) {
+        data = await fetchNominatim(query, { limit: 8, viewbox: viewboxAround(state.userLocation.lat, state.userLocation.lon, 0.2), bounded: true });
+        if (!data || !data.length) {
+          data = await fetchNominatim(query, { limit: 8, viewbox: viewboxAround(state.userLocation.lat, state.userLocation.lon, 2) });
+        }
+      } else {
+        data = await fetchNominatim(query, { limit: 6 });
+      }
+    } catch (e) { return; } // silent fail on autocomplete; submit-time geocode will surface a real error
+    if (myToken !== acState[key].token) return; // stale response
+    if (!data || !data.length) { listEl.innerHTML = ''; listEl.hidden = true; return; }
+
+    if (state.userLocation) {
+      data.forEach(r => { r.__distM = haversineMeters(state.userLocation.lat, state.userLocation.lon, parseFloat(r.lat), parseFloat(r.lon)); });
+      data.sort((a, b) => a.__distM - b.__distM);
+    }
+
+    listEl.innerHTML = data.map((r, i) => {
+      const distStr = r.__distM != null ? `<span class="sugg-dist">${formatDistance(r.__distM)}</span>` : '';
+      return `<li data-i="${i}"><span class="sugg-name">${escapeHtml(shortLabel(r.display_name))}</span>${distStr}</li>`;
+    }).join('');
+    listEl.hidden = false;
+    Array.from(listEl.children).forEach((li, i) => {
+      li.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        const r = data[i];
+        const input = key === 'from' ? els.inputFrom : els.inputTo;
+        input.value = shortLabel(r.display_name);
+        state[key] = { lat: parseFloat(r.lat), lon: parseFloat(r.lon), label: r.display_name };
+        listEl.hidden = true;
+      });
+    });
+  }
+
+  wireAutocomplete(els.inputFrom, 'from');
+  wireAutocomplete(els.inputTo, 'to');
+
+  /* =========================================================
+     Routing (OSRM)
+     ========================================================= */
+
+  const OSRM = 'https://router.project-osrm.org/route/v1/driving/';
+
+  async function fetchRoute(from, to) {
+    const url = `${OSRM}${from.lon},${from.lat};${to.lon},${to.lat}?steps=true&geometries=geojson&overview=full`;
+    let res;
+    try { res = await fetch(url); }
+    catch (e) { throw new Error("The routing service didn't respond. It's a free community server that can be briefly unavailable — try again shortly."); }
+    const data = await res.json().catch(() => null);
+    if (!data || data.code !== 'Ok' || !data.routes || !data.routes.length) {
+      if (data && data.code === 'NoRoute') throw new Error('No driving route found between those two points.');
+      throw new Error("Couldn't calculate a route. Double-check both addresses and try again.");
+    }
+    return data.routes[0];
+  }
+
+  function buildSteps(route) {
+    const raw = [];
+    route.legs.forEach(leg => leg.steps.forEach(s => raw.push(s)));
+    return raw.map((step, i) => {
+      const bias = nextStepBias(raw[i + 1]);
+      return {
+        index: i,
+        isFirst: i === 0,
+        isLast: i === raw.length - 1,
+        instruction: describeStep(step),
+        name: step.name,
+        approachDistance: i > 0 ? raw[i - 1].distance : 0,
+        maneuver: step.maneuver,
+        location: step.maneuver.location, // [lon, lat]
+        laneInfo: laneGuidanceForStep(step, bias),
+      };
+    });
+  }
+
+  /* =========================================================
+     Map (Leaflet)
+     ========================================================= */
+
+  function ensureMap() {
+    if (state.map) return state.map;
+    state.map = L.map('map', { zoomControl: false }).setView([40.7128, -74.006], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+    }).addTo(state.map);
+    return state.map;
+  }
+
+  function drawRoute(route) {
+    const map = ensureMap();
+    if (state.routeLayer) map.removeLayer(state.routeLayer);
+    state.markers.forEach(m => map.removeLayer(m));
+    state.markers = [];
+
+    const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]);
+    state.routeLayer = L.polyline(latlngs, { color: '#1B6E4C', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+
+    const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#1B6E4C;border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>', iconSize: [14, 14] });
+    const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:4px;background:#22262B;border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>', iconSize: [14, 14] });
+    state.markers.push(L.marker(latlngs[0], { icon: startIcon }).addTo(map));
+    state.markers.push(L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(map));
+
+    map.fitBounds(state.routeLayer.getBounds(), { padding: [28, 28] });
+    setTimeout(() => map.invalidateSize(), 60);
+  }
+
+  function focusLocation(lonLat, zoom) {
+    const map = ensureMap();
+    const target = [lonLat[1], lonLat[0]];
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) map.setView(target, zoom || 17); else map.flyTo(target, zoom || 17, { duration: 0.6 });
+  }
+
+  function updateUserMarker(lat, lon, pan) {
+    const map = ensureMap();
+    const latlng = [lat, lon];
+    if (!state.userMarker) {
+      const icon = L.divIcon({ className: '', html: '<div class="user-puck"><div class="user-puck-ring"></div><div class="user-puck-dot"></div></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+      state.userMarker = L.marker(latlng, { icon, zIndexOffset: 1000 }).addTo(map);
+    } else {
+      state.userMarker.setLatLng(latlng);
+    }
+    if (pan) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) map.setView(latlng, 17); else map.panTo(latlng, { animate: true, duration: 0.5 });
+    }
+  }
+
+  // ---- Live GPS: follow position, auto-advance drive mode on arrival ----
+  // Straight-line (not along-route) distance to the maneuver point -- a
+  // reasonable approximation for a prototype; very curvy roads may read a
+  // little early/late versus true road distance.
+  function setGpsStatus(kind, text) {
+    els.gpsStatus.classList.remove('is-searching', 'is-off');
+    if (kind === 'searching') els.gpsStatus.classList.add('is-searching');
+    if (kind === 'off') els.gpsStatus.classList.add('is-off');
+    els.gpsStatusText.textContent = text;
+    els.btnNextStep.classList.toggle('is-primary-fallback', kind === 'off');
+  }
+
+  function onPosition(pos) {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    updateUserMarker(lat, lon, els.panelDrive.hidden ? false : true);
+    if (els.panelDrive.hidden) return; // only auto-advance while actually in drive mode
+
+    const step = state.steps[state.currentStep];
+    if (!step) return;
+    const dist = haversineMeters(lat, lon, step.location[1], step.location[0]);
+    els.driveDistance.textContent = `IN ${formatDistance(dist).toUpperCase()}`;
+    setGpsStatus('ok', 'Tracking your location');
+
+    const arrivalRadius = step.isLast ? 25 : 35;
+    if (dist < arrivalRadius && !state.advancing) {
+      state.advancing = true;
+      advanceStep();
+      setTimeout(() => { state.advancing = false; }, 4000); // debounce re-triggering near the same point
+    }
+  }
+
+  function onTrackError() {
+    setGpsStatus('off', "Location unavailable — tap below to move ahead manually");
+  }
+
+  function startTracking() {
+    if (state.watchId != null) return; // already running
+    if (!navigator.geolocation) { setGpsStatus('off', "Location isn't supported here — use the button below"); return; }
+    setGpsStatus('searching', 'Finding GPS signal…');
+    state.watchId = navigator.geolocation.watchPosition(onPosition, onTrackError, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+  }
+  function stopTracking() {
+    if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null; }
+  }
+
+  /* =========================================================
+     Rendering — route preview panel
+     ========================================================= */
+
+  function buildStepCard(step) {
+    const card = document.createElement('div');
+    card.className = 'step-card';
+
+    if (step.isFirst) {
+      card.innerHTML = `<div class="step-card-main"><div class="step-icon">${dotIconSVG()}</div>
+        <div><div class="step-instruction">${escapeHtml(step.instruction)}</div></div></div>`;
+      return card;
+    }
+    if (step.isLast) {
+      card.innerHTML = `<div class="step-card-main"><div class="step-icon">${flagIconSVG()}</div>
+        <div><div class="step-instruction">${escapeHtml(step.instruction)}</div>
+        <div class="step-distance">${formatDistance(step.approachDistance)}</div></div></div>`;
+      return card;
+    }
+
+    let laneHtml;
+    if (step.laneInfo.available && step.laneInfo.lanes) {
+      laneHtml = `<div class="lane-guidance">
+        <div class="lane-tiles">${step.laneInfo.lanes.map(l => laneTileHTML(l, 42, 62, step.laneInfo.narrowed)).join('')}</div>
+        <div class="lane-message">${escapeHtml(step.laneInfo.message)}</div></div>`;
+    } else {
+      laneHtml = `<div class="lane-guidance"><div class="lane-fallback">Lane markings aren't mapped here yet — move over early and watch the signs.</div></div>`;
+    }
+
+    card.innerHTML = `
+      <div class="step-card-main">
+        <div class="step-icon">${maneuverIconSVG(step.maneuver.modifier)}</div>
+        <div><div class="step-instruction">${escapeHtml(step.instruction)}</div>
+        <div class="step-distance">in ${formatDistance(step.approachDistance)}</div></div>
+      </div>
+      ${laneHtml}`;
+    return card;
+  }
+
+  function renderRouteScreen() {
+    els.tripTime.textContent = formatDuration(state.route.duration);
+    els.tripDist.textContent = formatDistance(state.route.distance);
+    els.stepsList.innerHTML = '';
+    state.steps.forEach(step => els.stepsList.appendChild(buildStepCard(step)));
+    drawRoute(state.route);
+  }
+
+  /* =========================================================
+     Rendering — drive mode panel
+     ========================================================= */
+
+  function showScreen(name) { els.screenSearch.hidden = name !== 'search'; els.screenNav.hidden = name !== 'nav'; }
+  function showPanel(name) {
+    els.panelRoute.hidden = name !== 'route';
+    els.panelDrive.hidden = name !== 'drive';
+    els.mapBack.style.display = name === 'drive' ? 'none' : 'flex';
+  }
+
+  function renderDriveStep() {
+    const step = state.steps[state.currentStep];
+    if (!step) return;
+    els.driveProgressLabel.textContent = `TURN ${state.currentStep} OF ${state.steps.length - 1}`;
+    els.driveDistance.textContent = step.approachDistance ? `IN ${formatDistance(step.approachDistance).toUpperCase()}` : '';
+    els.driveInstruction.textContent = step.instruction;
+    // If live GPS is actively updating, let IT drive the map pan (toward the
+    // user's real position) instead of jumping to the maneuver point, which
+    // would fight with the live marker. Only fall back to this when GPS
+    // isn't working, so there's still useful map context.
+    if (els.gpsStatus.classList.contains('is-off')) focusLocation(step.location, 17);
+
+    if (step.isLast) {
+      els.driveLanes.innerHTML = '';
+      els.driveMessage.textContent = "You've arrived. Nice driving.";
+      els.btnNextStep.textContent = 'Done';
+    } else {
+      const next = state.steps[state.currentStep + 1];
+      els.btnNextStep.textContent = (next && next.isLast) ? 'Arrive →' : 'Skip to arrival →';
+      if (step.laneInfo.available && step.laneInfo.lanes) {
+        els.driveLanes.innerHTML = step.laneInfo.lanes.map(l => laneTileHTML(l, 56, 82, step.laneInfo.narrowed)).join('');
+        els.driveMessage.textContent = step.laneInfo.message + (step.name ? ` Continuing onto ${step.name}.` : '');
+      } else {
+        els.driveLanes.innerHTML = '';
+        els.driveMessage.textContent = "Lane markings aren't mapped here yet — move over early and watch the signs.";
+      }
+      if (!(next && next.isLast)) els.btnNextStep.textContent = 'Skip to next turn →';
+    }
+  }
+
+  function advanceStep() {
+    if (state.currentStep >= state.steps.length - 1) { showPanel('route'); return; }
+    state.currentStep++;
+    renderDriveStep();
+  }
+
+  els.btnStartDrive.addEventListener('click', () => {
+    state.currentStep = 1;
+    state.advancing = false;
+    showPanel('drive');
+    renderDriveStep();
+    startTracking();
+  });
+  els.btnExitDrive.addEventListener('click', () => showPanel('route'));
+  els.btnNextStep.addEventListener('click', () => advanceStep());
+  els.mapBack.addEventListener('click', () => { stopTracking(); showScreen('search'); });
+
+  /* =========================================================
+     Form submit
+     ========================================================= */
+
+  function showFormError(msg) { els.formError.textContent = msg; els.formError.hidden = false; }
+  function hideFormError() { els.formError.hidden = true; }
+  function setRouteLoading(loading) {
+    els.btnRoute.disabled = loading;
+    els.btnRouteLabel.innerHTML = loading ? '<span class="spinner"></span>Finding your route…' : 'Find my route';
+  }
+
+  els.form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideFormError();
+    const toVal = els.inputTo.value.trim();
+    if (!toVal) { showFormError('Enter a destination.'); return; }
+    if (!state.from && !els.inputFrom.value.trim()) {
+      showFormError('Enter a starting point, or allow location access above.');
+      return;
+    }
+
+    setRouteLoading(true);
+    try {
+      if (!state.from) state.from = await geocodeOne(els.inputFrom.value.trim());
+      if (!state.to) state.to = await geocodeOne(toVal);
+    } catch (err) { setRouteLoading(false); showFormError(err.message); return; }
+
+    try {
+      const route = await fetchRoute(state.from, state.to);
+      state.route = route;
+      state.steps = buildSteps(route);
+      showScreen('nav');
+      showPanel('route');
+      renderRouteScreen();
+      startTracking(); // live position shows on the map right away; drive mode uses it to auto-advance
+    } catch (err) {
+      showFormError(err.message);
+    } finally {
+      setRouteLoading(false);
+    }
+  });
+})();
+</script>
+</body>
+</html>
