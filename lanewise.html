@@ -20,6 +20,7 @@
     --route-green-bright: #2FA372;
     --lane-paint: #F5F5F0;
     --caution: #C6791F;
+    --caution-bright: #F5A93E;
     --danger: #C94A3E;
     --line: #DDE2E6;
     --font-display: 'Overpass', system-ui, sans-serif;
@@ -51,7 +52,7 @@
     height: min(870px, calc(100dvh - 24px));
     background: var(--surface);
     border-radius: 26px;
-    box-shadow: 0 30px 60px -20px rgba(20, 30, 40, 0.35), 0 0 0 1px rgba(20,30,40,0.05);
+    box-shadow: 0 40px 80px -24px rgba(15, 23, 32, 0.45), 0 12px 28px -14px rgba(15,23,32,.25), 0 0 0 1px rgba(20,30,40,0.06);
     overflow: hidden;
   }
 
@@ -63,12 +64,18 @@
 
   .brand { display: flex; align-items: center; }
   .brand-mark {
-    width: 32px; height: 32px; border-radius: 9px; background: var(--route-green);
+    width: 32px; height: 32px; border-radius: 9px;
+    background: linear-gradient(150deg, #228259, var(--route-green) 65%);
+    box-shadow: 0 6px 14px -4px rgba(27,110,79,.55), inset 0 1px 0 rgba(255,255,255,.18);
     display: flex; align-items: center; justify-content: center; margin-right: 10px; flex-shrink: 0;
   }
   .brand-name { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: -0.01em; }
 
-  .hero-card { margin-top: 20px; background: var(--asphalt); border-radius: 20px; padding: 18px 18px 14px; }
+  .hero-card {
+    margin-top: 20px; background: linear-gradient(165deg, #282D33, var(--asphalt) 55%);
+    border-radius: 20px; padding: 18px 18px 14px;
+    box-shadow: 0 16px 32px -14px rgba(20,30,40,.4), inset 0 1px 0 rgba(255,255,255,.06);
+  }
   .hero-lanes { display: flex; justify-content: center; }
   .hero-lanes .lane-tile { margin-right: 7px; }
   .hero-lanes .lane-tile:last-child { margin-right: 0; }
@@ -142,10 +149,14 @@
   }
 
   .btn-primary {
-    width: 100%; border: none; border-radius: 14px; background: var(--route-green);
+    width: 100%; border: none; border-radius: 14px;
+    background: linear-gradient(155deg, #1F7A54, var(--route-green) 70%);
     color: white; font-family: var(--font-display); font-weight: 700; font-size: 15.5px;
     padding: 14px; margin-top: 6px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 22px -8px rgba(27,110,79,.55), inset 0 1px 0 rgba(255,255,255,.14);
+    transition: transform 0.15s, box-shadow 0.15s;
   }
+  .btn-primary:active { transform: scale(0.985); box-shadow: 0 4px 12px -6px rgba(27,110,79,.5); }
   .btn-primary:disabled { opacity: 0.65; }
   .btn-primary .spinner {
     width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.4);
@@ -161,30 +172,50 @@
   .attribution-note { font-size: 11px; line-height: 1.5; color: #8B95A0; margin-top: 16px; text-align: center; }
   .attribution-note a { color: var(--ink-soft); text-decoration: underline; }
 
-  /* ---------- Nav screen (map + sheet) ---------- */
-  .screen-nav { position: relative; }
-  .map-area { height: 34%; min-height: 190px; flex-shrink: 0; position: relative; background: #C8D3D8; }
-  #map { width: 100%; height: 100%; }
+  /* ---------- Nav screen: full-bleed map, floating glass overlays ---------- */
+  .screen.screen-nav { position: relative; padding: 0; display: block; }
+  .screen.screen-nav[hidden] { display: none; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; background: #C7D2D8; }
+  .leaflet-tile-pane { filter: saturate(0.76) brightness(1.05) contrast(0.96) hue-rotate(-4deg); }
+
   .map-back {
-    position: absolute; top: 14px; left: 14px; z-index: 500; width: 40px; height: 40px;
-    border-radius: 12px; background: white; border: none; box-shadow: 0 4px 10px rgba(0,0,0,.2);
-    display: flex; align-items: center; justify-content: center;
+    position: absolute; top: 16px; left: 16px; z-index: 500; width: 42px; height: 42px;
+    border-radius: 13px; background: rgba(255,255,255,0.94);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border: none; box-shadow: 0 10px 22px -8px rgba(20,30,40,.4), 0 0 0 1px rgba(20,30,40,.05);
+    display: flex; align-items: center; justify-content: center; transition: transform 0.15s;
   }
+  .map-back:active { transform: scale(0.93); }
 
-  .sheet { flex: 1; overflow-y: auto; background: var(--surface); }
-  .panel { padding: 18px 20px 26px; }
-  .panel[hidden] { display: none; }
+  /* Route-preview: compact floating card by default, expands over the map to show all turns */
+  .sheet {
+    position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 400;
+    background: var(--card); border-radius: 24px;
+    box-shadow: 0 24px 50px -14px rgba(15,23,32,.4), 0 0 0 1px rgba(20,30,40,.05);
+    height: 172px; overflow: hidden; display: flex; flex-direction: column;
+    transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sheet.expanded { height: 76%; }
+  .sheet[hidden] { display: none; }
 
+  .sheet-handle { border: none; background: none; padding: 12px 20px 4px; text-align: left; display: block; width: 100%; flex-shrink: 0; }
+  .handle-bar { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; }
+  .sheet-header { display: flex; align-items: center; justify-content: space-between; }
   .trip-summary { display: flex; align-items: baseline; }
-  .trip-time { font-family: var(--font-display); font-weight: 800; font-size: 24px; margin-right: 8px; }
-  .trip-dist { font-weight: 600; font-size: 14px; color: var(--ink-soft); }
+  .trip-time { font-family: var(--font-display); font-weight: 800; font-size: 21px; margin-right: 8px; }
+  .trip-dist { font-weight: 600; font-size: 13.5px; color: var(--ink-soft); }
+  .chevron { color: var(--ink-soft); display: flex; transition: transform 0.35s; flex-shrink: 0; }
+  .sheet.expanded .chevron { transform: rotate(180deg); }
+
+  .sheet > .btn-primary { margin: 10px 20px 0; width: calc(100% - 40px); flex-shrink: 0; }
+  .steps-scroll { overflow-y: auto; padding: 4px 20px 22px; flex: 1; }
 
   .steps-header {
     font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase;
-    letter-spacing: 0.06em; margin: 20px 0 10px;
+    letter-spacing: 0.06em; margin: 18px 0 10px;
   }
 
-  .step-card { background: var(--card); border-radius: 16px; padding: 13px; margin-bottom: 9px; border: 1px solid var(--line); }
+  .step-card { background: var(--card); border-radius: 16px; padding: 13px; margin-bottom: 9px; box-shadow: 0 1px 2px rgba(20,30,40,.05), 0 8px 20px -10px rgba(20,30,40,.18); }
   .step-card-main { display: flex; align-items: flex-start; }
   .step-icon {
     width: 32px; height: 32px; border-radius: 9px; background: var(--asphalt); flex-shrink: 0;
@@ -195,48 +226,63 @@
 
   .lane-guidance { margin-top: 11px; padding-top: 11px; border-top: 1px dashed var(--line); }
   .lane-tiles { display: flex; }
-  .lane-tile { border-radius: 11px; display: flex; align-items: center; justify-content: center; margin-right: 6px; flex-shrink: 0; position: relative; }
+  .lane-tile {
+    border-radius: 11px; display: flex; align-items: center; justify-content: center; margin-right: 6px;
+    flex-shrink: 0; position: relative; box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  }
   .lane-tile:last-child { margin-right: 0; }
-  .lane-tile.is-legal-not-best { box-shadow: 0 0 0 2px var(--route-green-bright); }
+  .lane-tile.is-legal-not-best { box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), 0 0 0 2px var(--route-green-bright); }
   .lane-best-chip {
     position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
     background: var(--route-green-bright); color: white; font-size: 8.5px; font-weight: 800;
     letter-spacing: 0.04em; padding: 2px 6px; border-radius: 6px; white-space: nowrap;
+    box-shadow: 0 3px 8px -2px rgba(47,163,114,.6);
   }
   .lane-message { font-size: 12.5px; font-weight: 600; margin-top: 9px; }
   .lane-fallback { font-size: 12px; color: var(--ink-soft); font-style: italic; line-height: 1.4; }
 
-  /* Drive mode */
-  .drive-progress { display: flex; align-items: center; justify-content: space-between; }
-  .drive-progress-label { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); font-weight: 600; }
-  .btn-icon {
-    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--card); display: flex; align-items: center; justify-content: center;
+  /* Drive mode: floating dark-glass instruction toast + floating status bar */
+  .drive-toast {
+    position: absolute; top: 16px; left: 14px; right: 14px; z-index: 450;
+    background: rgba(28, 32, 38, 0.86); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+    border-radius: 24px; padding: 16px 18px 18px; color: white;
+    box-shadow: 0 26px 55px -16px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09), inset 0 1px 0 rgba(255,255,255,.06);
   }
-  .drive-distance { font-family: var(--font-mono); color: var(--caution); font-weight: 700; font-size: 14px; margin-top: 18px; letter-spacing: 0.02em; }
-  .drive-instruction { font-family: var(--font-display); font-weight: 800; font-size: 22px; line-height: 1.22; margin-top: 5px; }
-  .drive-lanes { display: flex; margin-top: 18px; }
-  .drive-lanes .lane-tile { margin-right: 8px; }
-  .drive-message { font-size: 14.5px; font-weight: 600; line-height: 1.4; margin-top: 14px; }
-  .drive-next { margin-top: 18px; }
+  .drive-toast[hidden] { display: none; }
+  .drive-toast-top { display: flex; align-items: center; justify-content: space-between; }
+  .drive-progress-label { font-family: var(--font-mono); font-size: 11.5px; color: rgba(255,255,255,.5); font-weight: 600; letter-spacing: 0.04em; }
+  .btn-icon-ghost {
+    width: 29px; height: 29px; border-radius: 9px; border: none; background: rgba(255,255,255,.09);
+    color: rgba(255,255,255,.85); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .btn-icon-ghost:active { background: rgba(255,255,255,.18); }
 
-  .gps-status {
-    display: flex; align-items: center; font-size: 12px; color: var(--ink-soft);
-    font-weight: 600; margin-top: 14px;
+  .drive-distance { font-family: var(--font-mono); color: var(--caution-bright); font-weight: 700; font-size: 13.5px; margin-top: 14px; letter-spacing: 0.03em; }
+  .drive-instruction { font-family: var(--font-display); font-weight: 800; font-size: 21px; line-height: 1.2; margin-top: 4px; }
+  .drive-lanes { display: flex; margin-top: 16px; }
+  .drive-lanes .lane-tile { margin-right: 8px; }
+  .drive-message { font-size: 13.5px; font-weight: 600; line-height: 1.4; margin-top: 12px; color: rgba(255,255,255,.9); }
+
+  .drive-bottom-bar {
+    position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 450;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    border-radius: 18px; padding: 8px 8px 8px 16px;
+    box-shadow: 0 16px 34px -12px rgba(20,30,40,.35), 0 0 0 1px rgba(20,30,40,.05);
   }
-  .gps-status .dot {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--route-green-bright);
-    margin-right: 7px; flex-shrink: 0;
-  }
+  .drive-bottom-bar[hidden] { display: none; }
+
+  .gps-status { display: flex; align-items: center; font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .gps-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--route-green-bright); margin-right: 7px; flex-shrink: 0; }
   .gps-status.is-searching .dot { background: var(--caution); animation: pulse 1.2s ease-in-out infinite; }
   .gps-status.is-off .dot { background: #B7BFC7; }
 
-  .btn-secondary {
-    width: 100%; border: 1.5px solid var(--line); border-radius: 14px; background: transparent;
-    color: var(--ink-soft); font-family: var(--font-display); font-weight: 700; font-size: 14px;
-    padding: 11px; margin-top: 10px; display: flex; align-items: center; justify-content: center;
+  .btn-skip {
+    border: none; border-radius: 12px; background: var(--asphalt); color: white;
+    font-family: var(--font-display); font-weight: 700; font-size: 13px; padding: 10px 16px; flex-shrink: 0;
   }
-  .btn-secondary.is-primary-fallback { border-color: var(--route-green); color: var(--route-green); }
+  .btn-skip:active { transform: scale(0.96); }
+  .btn-skip.is-primary-fallback { background: var(--route-green); box-shadow: 0 6px 16px -4px rgba(27,110,79,.5); }
 
   .user-puck { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
   .user-puck-ring {
@@ -310,38 +356,49 @@
     <p class="attribution-note">Map, geocoding &amp; routing: OpenStreetMap contributors, via the free public Nominatim &amp; OSRM community services — built for prototypes, not heavy traffic. <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noopener">Nominatim usage policy ↗</a></p>
   </section>
 
-  <!-- ============ NAV SCREEN (map + sheet) ============ -->
-  <section class="screen" id="screen-nav" hidden>
-    <div class="map-area">
-      <div id="map"></div>
-      <button class="map-back" id="btn-map-back" aria-label="Back to search">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A1D22" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-    </div>
+  <!-- ============ NAV SCREEN (map-first, floating overlays) ============ -->
+  <section class="screen screen-nav" id="screen-nav" hidden>
+    <div id="map"></div>
 
-    <div class="sheet">
-      <div class="panel" id="panel-route">
-        <div class="trip-summary"><span class="trip-time" id="trip-time">—</span><span class="trip-dist" id="trip-dist"></span></div>
-        <button class="btn-primary" id="btn-start-drive">Start drive</button>
+    <button class="map-back" id="btn-map-back" aria-label="Back to search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A1D22" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <!-- Route preview: compact peek sheet, expandable to see the full turn list -->
+    <div class="sheet" id="sheet">
+      <button class="sheet-handle" id="sheet-handle" aria-label="Show all turns">
+        <span class="handle-bar"></span>
+        <span class="sheet-header">
+          <span class="trip-summary"><span class="trip-time" id="trip-time">—</span><span class="trip-dist" id="trip-dist"></span></span>
+          <span class="chevron" id="sheet-chevron">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </span>
+      </button>
+      <button class="btn-primary" id="btn-start-drive">Start drive</button>
+      <div class="steps-scroll">
         <div class="steps-header">Turns on this route</div>
         <div id="steps-list"></div>
       </div>
+    </div>
 
-      <div class="panel" id="panel-drive" hidden>
-        <div class="drive-progress">
-          <button class="btn-icon" id="btn-exit-drive" aria-label="Exit drive mode">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A1D22" stroke-width="2.3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-          </button>
-          <div class="drive-progress-label" id="drive-progress-label"></div>
-          <div style="width:36px"></div>
-        </div>
-        <div class="drive-distance" id="drive-distance"></div>
-        <div class="drive-instruction" id="drive-instruction"></div>
-        <div class="drive-lanes" id="drive-lanes"></div>
-        <div class="drive-message" id="drive-message"></div>
-        <div class="gps-status is-searching" id="gps-status"><span class="dot"></span><span id="gps-status-text">Finding GPS signal…</span></div>
-        <button class="btn-secondary drive-next" id="btn-next-step">Skip to next turn →</button>
+    <!-- Drive mode: floating glass instruction toast + compact status bar -->
+    <div class="drive-toast" id="panel-drive" hidden>
+      <div class="drive-toast-top">
+        <div class="drive-progress-label" id="drive-progress-label"></div>
+        <button class="btn-icon-ghost" id="btn-exit-drive" aria-label="Exit drive mode">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
+      <div class="drive-distance" id="drive-distance"></div>
+      <div class="drive-instruction" id="drive-instruction"></div>
+      <div class="drive-lanes" id="drive-lanes"></div>
+      <div class="drive-message" id="drive-message"></div>
+    </div>
+
+    <div class="drive-bottom-bar" id="drive-bottom-bar" hidden>
+      <div class="gps-status is-searching" id="gps-status"><span class="dot"></span><span id="gps-status-text">Finding GPS signal…</span></div>
+      <button class="btn-skip" id="btn-next-step">Skip →</button>
     </div>
   </section>
 
@@ -590,7 +647,7 @@
 
   const state = {
     userLocation: null, originOverridden: false, from: null, to: null, route: null, steps: [], currentStep: 1,
-    map: null, routeLayer: null, markers: [], userMarker: null, watchId: null, advancing: false,
+    map: null, routeLayer: null, routeHalo: null, markers: [], userMarker: null, watchId: null, advancing: false,
   };
   const $ = id => document.getElementById(id);
   const els = {
@@ -603,7 +660,7 @@
     btnRoute: $('btn-route'), btnRouteLabel: $('btn-route-label'),
     formError: $('form-error'),
     mapBack: $('btn-map-back'),
-    panelRoute: $('panel-route'), panelDrive: $('panel-drive'),
+    sheet: $('sheet'), sheetHandle: $('sheet-handle'), panelDrive: $('panel-drive'), driveBottomBar: $('drive-bottom-bar'),
     tripTime: $('trip-time'), tripDist: $('trip-dist'),
     btnStartDrive: $('btn-start-drive'), stepsList: $('steps-list'),
     btnExitDrive: $('btn-exit-drive'), driveProgressLabel: $('drive-progress-label'),
@@ -837,18 +894,29 @@
   function drawRoute(route) {
     const map = ensureMap();
     if (state.routeLayer) map.removeLayer(state.routeLayer);
+    if (state.routeHalo) map.removeLayer(state.routeHalo);
     state.markers.forEach(m => map.removeLayer(m));
     state.markers = [];
 
     const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]);
-    state.routeLayer = L.polyline(latlngs, { color: '#1B6E4C', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    // A soft white halo under the route line makes it read clearly against
+    // the map regardless of what's underneath (parks, water, dense streets).
+    state.routeHalo = L.polyline(latlngs, { color: '#FFFFFF', weight: 9, opacity: 0.55, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    state.routeLayer = L.polyline(latlngs, { color: '#1B6E4C', weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(map);
 
-    const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#1B6E4C;border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>', iconSize: [14, 14] });
-    const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:4px;background:#22262B;border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>', iconSize: [14, 14] });
+    const startIcon = L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#1B6E4C;border:3px solid white;box-shadow:0 3px 8px rgba(20,30,40,.4)"></div>', iconSize: [16, 16] });
+    const endIcon = L.divIcon({
+      className: '',
+      html: '<div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;">' +
+        '<svg width="30" height="30" viewBox="0 0 30 30" style="filter:drop-shadow(0 3px 6px rgba(20,30,40,.45))">' +
+        '<path d="M15 2c-6 0-10 4.4-10 10 0 7.5 10 16 10 16s10-8.5 10-16c0-5.6-4-10-10-10z" fill="#22262B"/>' +
+        '<circle cx="15" cy="12" r="4" fill="white"/></svg></div>',
+      iconSize: [30, 30], iconAnchor: [15, 28],
+    });
     state.markers.push(L.marker(latlngs[0], { icon: startIcon }).addTo(map));
     state.markers.push(L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(map));
 
-    map.fitBounds(state.routeLayer.getBounds(), { padding: [28, 28] });
+    map.fitBounds(state.routeLayer.getBounds(), { padding: [32, 32] });
     setTimeout(() => map.invalidateSize(), 60);
   }
 
@@ -972,10 +1040,14 @@
 
   function showScreen(name) { els.screenSearch.hidden = name !== 'search'; els.screenNav.hidden = name !== 'nav'; }
   function showPanel(name) {
-    els.panelRoute.hidden = name !== 'route';
+    els.sheet.hidden = name !== 'route';
     els.panelDrive.hidden = name !== 'drive';
+    els.driveBottomBar.hidden = name !== 'drive';
+    if (name !== 'route') els.sheet.classList.remove('expanded');
     els.mapBack.style.display = name === 'drive' ? 'none' : 'flex';
   }
+
+  els.sheetHandle.addEventListener('click', () => els.sheet.classList.toggle('expanded'));
 
   function renderDriveStep() {
     const step = state.steps[state.currentStep];
