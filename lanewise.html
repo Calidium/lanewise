@@ -175,7 +175,11 @@
   /* ---------- Nav screen: full-bleed map, floating glass overlays ---------- */
   .screen.screen-nav { position: relative; padding: 0; display: block; }
   .screen.screen-nav[hidden] { display: none; }
-  #map { position: absolute; inset: 0; width: 100%; height: 100%; background: #C7D2D8; }
+  .map-viewport { position: absolute; inset: 0; overflow: hidden; background: #C7D2D8; }
+  #map {
+    position: absolute; top: -280px; right: -280px; bottom: -280px; left: -280px;
+    transform-origin: 50% 50%; transition: transform 0.6s linear;
+  }
   .leaflet-tile-pane { filter: saturate(0.76) brightness(1.05) contrast(0.96) hue-rotate(-4deg); }
 
   .map-back {
@@ -241,14 +245,27 @@
   .lane-message { font-size: 12.5px; font-weight: 600; margin-top: 9px; }
   .lane-fallback { font-size: 12px; color: var(--ink-soft); font-style: italic; line-height: 1.4; }
 
-  /* Drive mode: floating dark-glass instruction toast + floating status bar */
+  /* Drive mode: bottom-anchored stack (recenter button, instruction toast, status bar) */
+  .drive-stack {
+    position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 450;
+    display: flex; flex-direction: column;
+  }
+  .drive-stack[hidden] { display: none; }
+
+  .btn-recenter {
+    align-self: flex-end; margin-bottom: 10px; width: 46px; height: 46px; flex-shrink: 0;
+    border-radius: 50%; border: none; background: var(--route-green);
+    box-shadow: 0 12px 26px -8px rgba(27,110,79,.6), 0 0 0 1px rgba(255,255,255,.12);
+    display: flex; align-items: center; justify-content: center; transition: transform 0.15s;
+  }
+  .btn-recenter:active { transform: scale(0.93); }
+  .btn-recenter[hidden] { display: none; }
+
   .drive-toast {
-    position: absolute; top: 16px; left: 14px; right: 14px; z-index: 450;
     background: rgba(28, 32, 38, 0.86); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
-    border-radius: 24px; padding: 16px 18px 18px; color: white;
+    border-radius: 24px; padding: 16px 18px 18px; color: white; margin-bottom: 10px;
     box-shadow: 0 26px 55px -16px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09), inset 0 1px 0 rgba(255,255,255,.06);
   }
-  .drive-toast[hidden] { display: none; }
   .drive-toast-top { display: flex; align-items: center; justify-content: space-between; }
   .drive-progress-label { font-family: var(--font-mono); font-size: 11.5px; color: rgba(255,255,255,.5); font-weight: 600; letter-spacing: 0.04em; }
   .btn-icon-ghost {
@@ -264,13 +281,11 @@
   .drive-message { font-size: 13.5px; font-weight: 600; line-height: 1.4; margin-top: 12px; color: rgba(255,255,255,.9); }
 
   .drive-bottom-bar {
-    position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 450;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
     border-radius: 18px; padding: 8px 8px 8px 16px;
     box-shadow: 0 16px 34px -12px rgba(20,30,40,.35), 0 0 0 1px rgba(20,30,40,.05);
   }
-  .drive-bottom-bar[hidden] { display: none; }
 
   .gps-status { display: flex; align-items: center; font-size: 12px; color: var(--ink-soft); font-weight: 600; }
   .gps-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--route-green-bright); margin-right: 7px; flex-shrink: 0; }
@@ -284,23 +299,25 @@
   .btn-skip:active { transform: scale(0.96); }
   .btn-skip.is-primary-fallback { background: var(--route-green); box-shadow: 0 6px 16px -4px rgba(27,110,79,.5); }
 
-  .user-puck { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
+  .user-puck { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; position: relative; }
   .user-puck-ring {
     position: absolute; width: 20px; height: 20px; border-radius: 50%;
     background: rgba(76, 142, 255, 0.28); animation: puck-pulse 1.8s ease-out infinite;
   }
+  .user-puck-rotate { width: 30px; height: 30px; transition: transform 0.5s linear; }
+  .user-puck-cone { fill: rgba(76, 142, 255, 0.32); }
   .user-puck-dot {
-    width: 14px; height: 14px; border-radius: 50%; background: #4C8EFF;
-    border: 3px solid white; box-shadow: 0 1px 4px rgba(0,0,0,.35); position: relative; z-index: 1;
+    fill: #4C8EFF; stroke: white; stroke-width: 2.5;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.35));
   }
-  @keyframes puck-pulse { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(2.2); opacity: 0; } }
+  @keyframes puck-pulse { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(2.4); opacity: 0; } }
 
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: #C7CED4; border-radius: 3px; }
 
   @media (prefers-reduced-motion: reduce) {
     .locate-btn.loading, .btn-primary .spinner, .location-status.is-loading .dot,
-    .gps-status.is-searching .dot, .user-puck-ring { animation: none; }
+    .gps-status.is-searching .dot, .user-puck-ring, #map, .user-puck-rotate { animation: none; transition: none; }
   }
 </style>
 </head>
@@ -358,7 +375,9 @@
 
   <!-- ============ NAV SCREEN (map-first, floating overlays) ============ -->
   <section class="screen screen-nav" id="screen-nav" hidden>
-    <div id="map"></div>
+    <div class="map-viewport">
+      <div id="map"></div>
+    </div>
 
     <button class="map-back" id="btn-map-back" aria-label="Back to search">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A1D22" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -382,23 +401,27 @@
       </div>
     </div>
 
-    <!-- Drive mode: floating glass instruction toast + compact status bar -->
-    <div class="drive-toast" id="panel-drive" hidden>
-      <div class="drive-toast-top">
-        <div class="drive-progress-label" id="drive-progress-label"></div>
-        <button class="btn-icon-ghost" id="btn-exit-drive" aria-label="Exit drive mode">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
+    <!-- Drive mode: floating glass instruction toast anchored to the bottom -->
+    <div class="drive-stack" id="panel-drive" hidden>
+      <button class="btn-recenter" id="btn-recenter" aria-label="Recenter and resume following" hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L19 20 L12 16 L5 20 Z"/></svg>
+      </button>
+      <div class="drive-toast">
+        <div class="drive-toast-top">
+          <div class="drive-progress-label" id="drive-progress-label"></div>
+          <button class="btn-icon-ghost" id="btn-exit-drive" aria-label="Exit drive mode">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="drive-distance" id="drive-distance"></div>
+        <div class="drive-instruction" id="drive-instruction"></div>
+        <div class="drive-lanes" id="drive-lanes"></div>
+        <div class="drive-message" id="drive-message"></div>
       </div>
-      <div class="drive-distance" id="drive-distance"></div>
-      <div class="drive-instruction" id="drive-instruction"></div>
-      <div class="drive-lanes" id="drive-lanes"></div>
-      <div class="drive-message" id="drive-message"></div>
-    </div>
-
-    <div class="drive-bottom-bar" id="drive-bottom-bar" hidden>
-      <div class="gps-status is-searching" id="gps-status"><span class="dot"></span><span id="gps-status-text">Finding GPS signal…</span></div>
-      <button class="btn-skip" id="btn-next-step">Skip →</button>
+      <div class="drive-bottom-bar" id="drive-bottom-bar">
+        <div class="gps-status is-searching" id="gps-status"><span class="dot"></span><span id="gps-status-text">Finding GPS signal…</span></div>
+        <button class="btn-skip" id="btn-next-step">Skip →</button>
+      </div>
     </div>
   </section>
 
@@ -641,6 +664,17 @@
   }
   function shortLabel(displayName) { return displayName.split(',').map(s => s.trim()).slice(0, 3).join(', '); }
 
+  // Compass bearing (0-360, 0=north) from point 1 to point 2. Used as a
+  // fallback when the device doesn't report GPS heading directly (heading is
+  // frequently null until the device has moved a bit).
+  function computeBearing(lat1, lon1, lat2, lon2) {
+    const toRad = d => (d * Math.PI) / 180, toDeg = r => (r * 180) / Math.PI;
+    const dLon = toRad(lon2 - lon1);
+    const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+    const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+
   /* =========================================================
      App state + DOM refs
      ========================================================= */
@@ -648,6 +682,7 @@
   const state = {
     userLocation: null, originOverridden: false, from: null, to: null, route: null, steps: [], currentStep: 1,
     map: null, routeLayer: null, routeHalo: null, markers: [], userMarker: null, watchId: null, advancing: false,
+    lastPosition: null, heading: null, followMode: true,
   };
   const $ = id => document.getElementById(id);
   const els = {
@@ -659,7 +694,7 @@
     btnChangeOrigin: $('btn-change-origin'),
     btnRoute: $('btn-route'), btnRouteLabel: $('btn-route-label'),
     formError: $('form-error'),
-    mapBack: $('btn-map-back'),
+    mapBack: $('btn-map-back'), btnRecenter: $('btn-recenter'),
     sheet: $('sheet'), sheetHandle: $('sheet-handle'), panelDrive: $('panel-drive'), driveBottomBar: $('drive-bottom-bar'),
     tripTime: $('trip-time'), tripDist: $('trip-dist'),
     btnStartDrive: $('btn-start-drive'), stepsList: $('steps-list'),
@@ -888,7 +923,20 @@
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(state.map);
+    // A manual pan during drive mode means the person wants to look around --
+    // stop auto-following/rotating and offer a way back in, like Google Maps.
+    state.map.on('dragstart', () => {
+      if (els.panelDrive.hidden || !state.followMode) return;
+      state.followMode = false;
+      setMapRotation(0);
+      els.btnRecenter.hidden = false;
+    });
     return state.map;
+  }
+
+  function setMapRotation(deg) {
+    state.mapRotation = deg;
+    ensureMap().getContainer().style.transform = `rotate(${deg}deg)`;
   }
 
   function drawRoute(route) {
@@ -927,15 +975,33 @@
     if (reduce) map.setView(target, zoom || 17); else map.flyTo(target, zoom || 17, { duration: 0.6 });
   }
 
+  function puckHTML() {
+    return `<div class="user-puck"><div class="user-puck-ring"></div>
+      <div class="user-puck-rotate" id="puck-rotate">
+        <svg width="30" height="30" viewBox="0 0 30 30">
+          <path class="user-puck-cone" d="M15 15 L23 27 A15 15 0 0 1 7 27 Z"/>
+          <circle class="user-puck-dot" cx="15" cy="15" r="6"/>
+        </svg>
+      </div></div>`;
+  }
+
   function updateUserMarker(lat, lon, pan) {
     const map = ensureMap();
     const latlng = [lat, lon];
     if (!state.userMarker) {
-      const icon = L.divIcon({ className: '', html: '<div class="user-puck"><div class="user-puck-ring"></div><div class="user-puck-dot"></div></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+      const icon = L.divIcon({ className: '', html: puckHTML(), iconSize: [30, 30], iconAnchor: [15, 15] });
       state.userMarker = L.marker(latlng, { icon, zIndexOffset: 1000 }).addTo(map);
     } else {
       state.userMarker.setLatLng(latlng);
     }
+    // The puck's own rotation is always the raw compass heading. Because
+    // it's a DOM child of the map container, it automatically compounds
+    // with the container's rotation -- so it correctly shows "pointing up"
+    // in follow mode and the true compass heading when north-up. No extra
+    // math needed here beyond just applying the heading directly.
+    const rotateEl = document.getElementById('puck-rotate');
+    if (rotateEl && state.heading != null) rotateEl.style.transform = `rotate(${state.heading}deg)`;
+
     if (pan) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (reduce) map.setView(latlng, 17); else map.panTo(latlng, { animate: true, duration: 0.5 });
@@ -956,8 +1022,24 @@
 
   function onPosition(pos) {
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
-    updateUserMarker(lat, lon, els.panelDrive.hidden ? false : true);
-    if (els.panelDrive.hidden) return; // only auto-advance while actually in drive mode
+
+    // Prefer the device's own heading; many devices only report it while
+    // actually moving, so fall back to computing bearing from the last two
+    // fixes (only once they're far enough apart to give a stable reading).
+    let heading = (pos.coords.heading != null && !isNaN(pos.coords.heading)) ? pos.coords.heading : null;
+    if (heading == null && state.lastPosition) {
+      const moved = haversineMeters(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
+      if (moved > 6) heading = computeBearing(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
+    }
+    if (heading != null) state.heading = heading;
+    state.lastPosition = { lat, lon };
+
+    const inDrive = !els.panelDrive.hidden;
+    const shouldFollow = inDrive && state.followMode;
+    updateUserMarker(lat, lon, shouldFollow);
+    if (shouldFollow) setMapRotation(state.heading != null ? -state.heading : 0);
+
+    if (!inDrive) return; // only auto-advance while actually in drive mode
 
     const step = state.steps[state.currentStep];
     if (!step) return;
@@ -1042,8 +1124,8 @@
   function showPanel(name) {
     els.sheet.hidden = name !== 'route';
     els.panelDrive.hidden = name !== 'drive';
-    els.driveBottomBar.hidden = name !== 'drive';
     if (name !== 'route') els.sheet.classList.remove('expanded');
+    if (name !== 'drive') { setMapRotation(0); els.btnRecenter.hidden = true; }
     els.mapBack.style.display = name === 'drive' ? 'none' : 'flex';
   }
 
@@ -1088,13 +1170,23 @@
   els.btnStartDrive.addEventListener('click', () => {
     state.currentStep = 1;
     state.advancing = false;
+    state.followMode = true;
+    els.btnRecenter.hidden = true;
     showPanel('drive');
     renderDriveStep();
     startTracking();
   });
   els.btnExitDrive.addEventListener('click', () => showPanel('route'));
   els.btnNextStep.addEventListener('click', () => advanceStep());
-  els.mapBack.addEventListener('click', () => { stopTracking(); showScreen('search'); });
+  els.mapBack.addEventListener('click', () => { stopTracking(); setMapRotation(0); showScreen('search'); });
+  els.btnRecenter.addEventListener('click', () => {
+    state.followMode = true;
+    els.btnRecenter.hidden = true;
+    if (state.lastPosition) {
+      updateUserMarker(state.lastPosition.lat, state.lastPosition.lon, true);
+      setMapRotation(state.heading != null ? -state.heading : 0);
+    }
+  });
 
   /* =========================================================
      Form submit
