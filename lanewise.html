@@ -375,7 +375,7 @@
 
   <!-- ============ NAV SCREEN (map-first, floating overlays) ============ -->
   <section class="screen screen-nav" id="screen-nav" hidden>
-    <div class="map-viewport">
+    <div class="map-viewport" id="map-viewport">
       <div id="map"></div>
     </div>
 
@@ -682,7 +682,7 @@
   const state = {
     userLocation: null, originOverridden: false, from: null, to: null, route: null, steps: [], currentStep: 1,
     map: null, routeLayer: null, routeHalo: null, markers: [], userMarker: null, watchId: null, advancing: false,
-    lastPosition: null, heading: null, followMode: true,
+    lastPosition: null, heading: null, followMode: true, puckHasCone: false,
   };
   const $ = id => document.getElementById(id);
   const els = {
@@ -694,7 +694,7 @@
     btnChangeOrigin: $('btn-change-origin'),
     btnRoute: $('btn-route'), btnRouteLabel: $('btn-route-label'),
     formError: $('form-error'),
-    mapBack: $('btn-map-back'), btnRecenter: $('btn-recenter'),
+    mapBack: $('btn-map-back'), btnRecenter: $('btn-recenter'), mapViewport: $('map-viewport'),
     sheet: $('sheet'), sheetHandle: $('sheet-handle'), panelDrive: $('panel-drive'), driveBottomBar: $('drive-bottom-bar'),
     tripTime: $('trip-time'), tripDist: $('trip-dist'),
     btnStartDrive: $('btn-start-drive'), stepsList: $('steps-list'),
@@ -923,14 +923,6 @@
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(state.map);
-    // A manual pan during drive mode means the person wants to look around --
-    // stop auto-following/rotating and offer a way back in, like Google Maps.
-    state.map.on('dragstart', () => {
-      if (els.panelDrive.hidden || !state.followMode) return;
-      state.followMode = false;
-      setMapRotation(0);
-      els.btnRecenter.hidden = false;
-    });
     return state.map;
   }
 
@@ -938,6 +930,29 @@
     state.mapRotation = deg;
     ensureMap().getContainer().style.transform = `rotate(${deg}deg)`;
   }
+
+  // While locked in follow mode, Leaflet's native dragging is disabled
+  // entirely -- Leaflet computes pan deltas in raw screen pixels with no
+  // idea the container is visually rotated, so letting it drag a rotated
+  // map produces broken, fighting motion. Un-rotating AND re-enabling
+  // dragging happen together, atomically, the instant the user touches the
+  // map -- never a rotated + draggable map at the same time.
+  function syncDragging() {
+    const map = ensureMap();
+    const inDrive = !els.panelDrive.hidden;
+    if (inDrive && state.followMode) map.dragging.disable();
+    else map.dragging.enable();
+  }
+
+  function breakFollowMode() {
+    if (els.panelDrive.hidden || !state.followMode) return;
+    state.followMode = false;
+    setMapRotation(0);
+    syncDragging();
+    els.btnRecenter.hidden = false;
+  }
+  els.mapViewport.addEventListener('touchstart', breakFollowMode, { passive: true });
+  els.mapViewport.addEventListener('mousedown', breakFollowMode);
 
   function drawRoute(route) {
     const map = ensureMap();
@@ -975,24 +990,30 @@
     if (reduce) map.setView(target, zoom || 17); else map.flyTo(target, zoom || 17, { duration: 0.6 });
   }
 
-  function puckHTML() {
+  function puckHTML(hasHeading) {
+    const cone = hasHeading
+      ? '<path class="user-puck-cone" d="M15 15 L23 27 A15 15 0 0 1 7 27 Z"/><circle class="user-puck-dot" cx="15" cy="15" r="6"/>'
+      : '<circle class="user-puck-dot" cx="15" cy="15" r="7"/>';
     return `<div class="user-puck"><div class="user-puck-ring"></div>
-      <div class="user-puck-rotate" id="puck-rotate">
-        <svg width="30" height="30" viewBox="0 0 30 30">
-          <path class="user-puck-cone" d="M15 15 L23 27 A15 15 0 0 1 7 27 Z"/>
-          <circle class="user-puck-dot" cx="15" cy="15" r="6"/>
-        </svg>
-      </div></div>`;
+      <div class="user-puck-rotate" id="puck-rotate"><svg width="30" height="30" viewBox="0 0 30 30">${cone}</svg></div></div>`;
   }
 
   function updateUserMarker(lat, lon, pan) {
     const map = ensureMap();
     const latlng = [lat, lon];
+    const hasHeading = state.heading != null;
     if (!state.userMarker) {
-      const icon = L.divIcon({ className: '', html: puckHTML(), iconSize: [30, 30], iconAnchor: [15, 15] });
+      const icon = L.divIcon({ className: '', html: puckHTML(hasHeading), iconSize: [30, 30], iconAnchor: [15, 15] });
       state.userMarker = L.marker(latlng, { icon, zIndexOffset: 1000 }).addTo(map);
+      state.puckHasCone = hasHeading;
     } else {
       state.userMarker.setLatLng(latlng);
+      // Upgrade from plain dot to directional cone the first moment a real
+      // heading becomes available (rather than guessing before we know).
+      if (hasHeading && !state.puckHasCone) {
+        state.userMarker.setIcon(L.divIcon({ className: '', html: puckHTML(true), iconSize: [30, 30], iconAnchor: [15, 15] }));
+        state.puckHasCone = true;
+      }
     }
     // The puck's own rotation is always the raw compass heading. Because
     // it's a DOM child of the map container, it automatically compounds
@@ -1000,7 +1021,7 @@
     // in follow mode and the true compass heading when north-up. No extra
     // math needed here beyond just applying the heading directly.
     const rotateEl = document.getElementById('puck-rotate');
-    if (rotateEl && state.heading != null) rotateEl.style.transform = `rotate(${state.heading}deg)`;
+    if (rotateEl && hasHeading) rotateEl.style.transform = `rotate(${state.heading}deg)`;
 
     if (pan) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1025,11 +1046,13 @@
 
     // Prefer the device's own heading; many devices only report it while
     // actually moving, so fall back to computing bearing from the last two
-    // fixes (only once they're far enough apart to give a stable reading).
+    // fixes once they're far enough apart for a stable reading (GPS noise
+    // makes very short hops unreliable, but this should catch on within a
+    // few seconds of actually driving).
     let heading = (pos.coords.heading != null && !isNaN(pos.coords.heading)) ? pos.coords.heading : null;
     if (heading == null && state.lastPosition) {
       const moved = haversineMeters(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
-      if (moved > 6) heading = computeBearing(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
+      if (moved > 4) heading = computeBearing(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
     }
     if (heading != null) state.heading = heading;
     state.lastPosition = { lat, lon };
@@ -1045,7 +1068,7 @@
     if (!step) return;
     const dist = haversineMeters(lat, lon, step.location[1], step.location[0]);
     els.driveDistance.textContent = `IN ${formatDistance(dist).toUpperCase()}`;
-    setGpsStatus('ok', 'Tracking your location');
+    setGpsStatus('ok', state.heading != null ? 'Tracking your location' : 'Tracking — finding your direction…');
 
     const arrivalRadius = step.isLast ? 25 : 35;
     if (dist < arrivalRadius && !state.advancing) {
@@ -1063,7 +1086,7 @@
     if (state.watchId != null) return; // already running
     if (!navigator.geolocation) { setGpsStatus('off', "Location isn't supported here — use the button below"); return; }
     setGpsStatus('searching', 'Finding GPS signal…');
-    state.watchId = navigator.geolocation.watchPosition(onPosition, onTrackError, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+    state.watchId = navigator.geolocation.watchPosition(onPosition, onTrackError, { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
   }
   function stopTracking() {
     if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null; }
@@ -1127,6 +1150,7 @@
     if (name !== 'route') els.sheet.classList.remove('expanded');
     if (name !== 'drive') { setMapRotation(0); els.btnRecenter.hidden = true; }
     els.mapBack.style.display = name === 'drive' ? 'none' : 'flex';
+    syncDragging();
   }
 
   els.sheetHandle.addEventListener('click', () => els.sheet.classList.toggle('expanded'));
@@ -1182,6 +1206,7 @@
   els.btnRecenter.addEventListener('click', () => {
     state.followMode = true;
     els.btnRecenter.hidden = true;
+    syncDragging();
     if (state.lastPosition) {
       updateUserMarker(state.lastPosition.lat, state.lastPosition.lon, true);
       setMapRotation(state.heading != null ? -state.heading : 0);
