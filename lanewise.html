@@ -175,11 +175,17 @@
   /* ---------- Nav screen: full-bleed map, floating glass overlays ---------- */
   .screen.screen-nav { position: relative; padding: 0; display: block; }
   .screen.screen-nav[hidden] { display: none; }
-  .map-viewport { position: absolute; inset: 0; overflow: hidden; background: #C7D2D8; }
+  .map-viewport { position: absolute; inset: 0; overflow: hidden; background: #C7D2D8; touch-action: none; }
   #map {
     position: absolute; top: -280px; right: -280px; bottom: -280px; left: -280px;
-    transform-origin: 50% 50%; transition: transform 0.6s linear;
+    transform-origin: 50% 50%;
   }
+  /* Continuous updates (compass, GPS fallback, two-finger rotate) apply
+     instantly -- no transition -- so rotation actually feels real-time
+     rather than smoothed/lagged behind the live input. The one exception is
+     recenter, a deliberate jump back that benefits from an animated snap;
+     that's opted into via this class rather than being always-on. */
+  #map.map-snap { transition: transform 0.45s ease-out; }
   .leaflet-tile-pane { filter: saturate(0.76) brightness(1.05) contrast(0.96) hue-rotate(-4deg); }
 
   .map-back {
@@ -304,7 +310,7 @@
     position: absolute; width: 20px; height: 20px; border-radius: 50%;
     background: rgba(76, 142, 255, 0.28); animation: puck-pulse 1.8s ease-out infinite;
   }
-  .user-puck-rotate { width: 30px; height: 30px; transition: transform 0.5s linear; }
+  .user-puck-rotate { width: 30px; height: 30px; }
   .user-puck-cone { fill: rgba(76, 142, 255, 0.32); }
   .user-puck-dot {
     fill: #4C8EFF; stroke: white; stroke-width: 2.5;
@@ -317,7 +323,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .locate-btn.loading, .btn-primary .spinner, .location-status.is-loading .dot,
-    .gps-status.is-searching .dot, .user-puck-ring, #map, .user-puck-rotate { animation: none; transition: none; }
+    .gps-status.is-searching .dot, .user-puck-ring, #map.map-snap { animation: none; transition: none; }
   }
 </style>
 </head>
@@ -683,6 +689,7 @@
     userLocation: null, originOverridden: false, from: null, to: null, route: null, steps: [], currentStep: 1,
     map: null, routeLayer: null, routeHalo: null, markers: [], userMarker: null, watchId: null, advancing: false,
     lastPosition: null, heading: null, followMode: true, puckHasCone: false,
+    compassActive: false, compassStarted: false,
   };
   const $ = id => document.getElementById(id);
   const els = {
@@ -931,6 +938,16 @@
     ensureMap().getContainer().style.transform = `rotate(${deg}deg)`;
   }
 
+  // Recenter is a deliberate, discrete jump back -- unlike the continuous
+  // per-frame updates from compass/gesture tracking, this one benefits from
+  // a brief animated snap rather than appearing instantly.
+  function snapMapRotation(deg) {
+    const el = ensureMap().getContainer();
+    el.classList.add('map-snap');
+    setMapRotation(deg);
+    setTimeout(() => el.classList.remove('map-snap'), 480);
+  }
+
   // While locked in follow mode, Leaflet's native dragging is disabled
   // entirely -- Leaflet computes pan deltas in raw screen pixels with no
   // idea the container is visually rotated, so letting it drag a rotated
@@ -951,7 +968,32 @@
     syncDragging();
     els.btnRecenter.hidden = false;
   }
-  els.mapViewport.addEventListener('touchstart', breakFollowMode, { passive: true });
+
+  // ---- Two-finger rotate gesture (Leaflet has no native rotation support) ----
+  // Leaflet's own pinch-zoom keeps working from the same two touches --
+  // zoom reads their distance, this reads their angle -- so pinch and
+  // rotate can happen together in one natural gesture, like a real map app.
+  function angleBetweenTouches(touches) {
+    const dx = touches[1].clientX - touches[0].clientX;
+    const dy = touches[1].clientY - touches[0].clientY;
+    return (Math.atan2(dy, dx) * 180) / Math.PI;
+  }
+  let rotateGesture = null;
+  els.mapViewport.addEventListener('touchstart', (e) => {
+    breakFollowMode();
+    if (!els.panelDrive.hidden && e.touches.length === 2) {
+      rotateGesture = { startAngle: angleBetweenTouches(e.touches), startRotation: state.mapRotation };
+    }
+  }, { passive: true });
+  els.mapViewport.addEventListener('touchmove', (e) => {
+    if (rotateGesture && e.touches.length === 2) {
+      const delta = angleBetweenTouches(e.touches) - rotateGesture.startAngle;
+      setMapRotation(rotateGesture.startRotation + delta);
+    }
+  }, { passive: true });
+  els.mapViewport.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) rotateGesture = null;
+  }, { passive: true });
   els.mapViewport.addEventListener('mousedown', breakFollowMode);
 
   function drawRoute(route) {
@@ -1044,17 +1086,17 @@
   function onPosition(pos) {
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
 
-    // Prefer the device's own heading; many devices only report it while
-    // actually moving, so fall back to computing bearing from the last two
-    // fixes once they're far enough apart for a stable reading (GPS noise
-    // makes very short hops unreliable, but this should catch on within a
-    // few seconds of actually driving).
-    let heading = (pos.coords.heading != null && !isNaN(pos.coords.heading)) ? pos.coords.heading : null;
-    if (heading == null && state.lastPosition) {
-      const moved = haversineMeters(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
-      if (moved > 4) heading = computeBearing(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
+    // The compass (if available) provides real-time heading updates far more
+    // often than GPS ever can -- only fall back to deriving heading from GPS
+    // when the compass isn't actively supplying it.
+    if (!state.compassActive) {
+      let heading = (pos.coords.heading != null && !isNaN(pos.coords.heading)) ? pos.coords.heading : null;
+      if (heading == null && state.lastPosition) {
+        const moved = haversineMeters(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
+        if (moved > 4) heading = computeBearing(state.lastPosition.lat, state.lastPosition.lon, lat, lon);
+      }
+      if (heading != null) state.heading = heading;
     }
-    if (heading != null) state.heading = heading;
     state.lastPosition = { lat, lon };
 
     const inDrive = !els.panelDrive.hidden;
@@ -1075,6 +1117,50 @@
       state.advancing = true;
       advanceStep();
       setTimeout(() => { state.advancing = false; }, 4000); // debounce re-triggering near the same point
+    }
+  }
+
+  // ---- Compass (DeviceOrientation): real-time heading ----
+  // GPS heading above is capped at roughly once per fix (~1/sec at best).
+  // A phone's compass updates dozens of times a second, so this is what
+  // actually makes rotation feel live rather than catching up in steps.
+  function extractCompassHeading(event) {
+    if (typeof event.webkitCompassHeading === 'number' && !isNaN(event.webkitCompassHeading)) {
+      return event.webkitCompassHeading; // iOS Safari: already clockwise-from-true-north
+    }
+    if (event.alpha != null && (event.absolute === true || event.type === 'deviceorientationabsolute')) {
+      return (360 - event.alpha) % 360; // spec alpha is CCW-from-north; convert to CW compass bearing
+    }
+    return null; // relative-only orientation data isn't usable as a compass reading
+  }
+
+  function onDeviceOrientation(event) {
+    const heading = extractCompassHeading(event);
+    if (heading == null) return;
+    state.compassActive = true;
+    state.heading = heading;
+    // Apply immediately instead of waiting for the next GPS fix.
+    if (state.lastPosition) {
+      updateUserMarker(state.lastPosition.lat, state.lastPosition.lon, false);
+      if (!els.panelDrive.hidden && state.followMode) setMapRotation(-state.heading);
+    }
+  }
+
+  // Must be called directly inside a user-gesture handler (a click), or iOS
+  // Safari's permission prompt won't appear at all.
+  function startCompass() {
+    if (state.compassStarted) return;
+    state.compassStarted = true;
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then(res => {
+        if (res === 'granted') {
+          window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
+          window.addEventListener('deviceorientation', onDeviceOrientation, true);
+        }
+      }).catch(() => {}); // denied/unsupported -- GPS-derived heading fallback still works
+    } else if ('DeviceOrientationEvent' in window) {
+      window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
+      window.addEventListener('deviceorientation', onDeviceOrientation, true);
     }
   }
 
@@ -1199,6 +1285,7 @@
     showPanel('drive');
     renderDriveStep();
     startTracking();
+    startCompass();
   });
   els.btnExitDrive.addEventListener('click', () => showPanel('route'));
   els.btnNextStep.addEventListener('click', () => advanceStep());
@@ -1209,7 +1296,7 @@
     syncDragging();
     if (state.lastPosition) {
       updateUserMarker(state.lastPosition.lat, state.lastPosition.lon, true);
-      setMapRotation(state.heading != null ? -state.heading : 0);
+      snapMapRotation(state.heading != null ? -state.heading : 0);
     }
   });
 
