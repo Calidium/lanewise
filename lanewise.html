@@ -948,24 +948,19 @@
     setTimeout(() => el.classList.remove('map-snap'), 480);
   }
 
-  // While locked in follow mode, Leaflet's native dragging is disabled
-  // entirely -- Leaflet computes pan deltas in raw screen pixels with no
-  // idea the container is visually rotated, so letting it drag a rotated
-  // map produces broken, fighting motion. Un-rotating AND re-enabling
-  // dragging happen together, atomically, the instant the user touches the
-  // map -- never a rotated + draggable map at the same time.
-  function syncDragging() {
-    const map = ensureMap();
-    const inDrive = !els.panelDrive.hidden;
-    if (inDrive && state.followMode) map.dragging.disable();
-    else map.dragging.enable();
-  }
-
+  // Dragging stays enabled at all times -- Leaflet's own source confirms it
+  // doesn't stop propagation, and disabling/re-enabling it added a moving
+  // part that wasn't actually necessary. What matters is ORDERING: rotation
+  // must reset to 0 before Leaflet reads its drag-start position, not after.
+  // Leaflet attaches its own touch/mouse handling directly on #map, while
+  // ours listens on the parent .map-viewport -- in the default bubble phase,
+  // Leaflet (closer to the actual touch target) would fire FIRST, so our
+  // reset would arrive too late. The capture phase fires top-down instead,
+  // guaranteeing our reset runs before Leaflet captures anything.
   function breakFollowMode() {
     if (els.panelDrive.hidden || !state.followMode) return;
     state.followMode = false;
     setMapRotation(0);
-    syncDragging();
     els.btnRecenter.hidden = false;
   }
 
@@ -984,17 +979,17 @@
     if (!els.panelDrive.hidden && e.touches.length === 2) {
       rotateGesture = { startAngle: angleBetweenTouches(e.touches), startRotation: state.mapRotation };
     }
-  }, { passive: true });
+  }, { passive: true, capture: true });
   els.mapViewport.addEventListener('touchmove', (e) => {
     if (rotateGesture && e.touches.length === 2) {
       const delta = angleBetweenTouches(e.touches) - rotateGesture.startAngle;
       setMapRotation(rotateGesture.startRotation + delta);
     }
-  }, { passive: true });
+  }, { passive: true, capture: true });
   els.mapViewport.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) rotateGesture = null;
-  }, { passive: true });
-  els.mapViewport.addEventListener('mousedown', breakFollowMode);
+  }, { passive: true, capture: true });
+  els.mapViewport.addEventListener('mousedown', breakFollowMode, true);
 
   function drawRoute(route) {
     const map = ensureMap();
@@ -1124,19 +1119,65 @@
   // GPS heading above is capped at roughly once per fix (~1/sec at best).
   // A phone's compass updates dozens of times a second, so this is what
   // actually makes rotation feel live rather than catching up in steps.
+  //
+  // The naive (360-alpha) formula only gives a correct compass heading when
+  // the phone is lying flat. Held up or mounted at an angle -- the realistic
+  // case for navigation -- alpha alone becomes unreliable and can flip by
+  // roughly 180 degrees as tilt crosses certain thresholds. This is a
+  // documented limitation of Android's raw orientation sensor in particular.
+  // The fix (verified against the W3C spec's own worked example and its two
+  // published consistency checks) is to also account for beta/gamma tilt,
+  // falling back to the simple formula only when the phone actually is flat
+  // (the tilt-aware formula is itself undefined in that exact case).
+  function tiltCompensatedHeading(alpha, beta, gamma) {
+    const d2r = Math.PI / 180;
+    const x = beta ? beta * d2r : 0;
+    const y = gamma ? gamma * d2r : 0;
+    const z = alpha ? alpha * d2r : 0;
+    const cX = Math.cos(x), cY = Math.cos(y), cZ = Math.cos(z);
+    const sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+    const Vx = -cZ * sY - sZ * sX * cY;
+    const Vy = -sZ * sY + cZ * sX * cY;
+    let heading = Math.atan(Vx / Vy);
+    if (Vy < 0) heading += Math.PI;
+    else if (Vx < 0) heading += 2 * Math.PI;
+    return heading * (180 / Math.PI);
+  }
+
   function extractCompassHeading(event) {
     if (typeof event.webkitCompassHeading === 'number' && !isNaN(event.webkitCompassHeading)) {
-      return event.webkitCompassHeading; // iOS Safari: already clockwise-from-true-north
+      return event.webkitCompassHeading; // iOS Safari: hardware tilt-compensated already
     }
     if (event.alpha != null && (event.absolute === true || event.type === 'deviceorientationabsolute')) {
-      return (360 - event.alpha) % 360; // spec alpha is CCW-from-north; convert to CW compass bearing
+      const beta = event.beta || 0, gamma = event.gamma || 0;
+      if (Math.abs(beta) < 0.5 && Math.abs(gamma) < 0.5) return (360 - event.alpha) % 360; // flat device
+      return tiltCompensatedHeading(event.alpha, beta, gamma);
     }
     return null; // relative-only orientation data isn't usable as a compass reading
   }
 
+  // Shortest signed angular difference from a to b, in (-180, 180].
+  function angleDiff(a, b) { return (((b - a + 540) % 360) - 180); }
+
   function onDeviceOrientation(event) {
     const heading = extractCompassHeading(event);
     if (heading == null) return;
+
+    // Defensive: raw orientation sensors (especially on Android, per tilt
+    // limitations above) can occasionally spit out one wildly wrong reading.
+    // A genuine change that large happening once is suspicious; the same
+    // change persisting across a few readings means it's real (e.g. an
+    // actual fast turn), so only isolated single-frame jumps get ignored.
+    if (state.compassActive && state.heading != null) {
+      const jump = Math.abs(angleDiff(state.heading, heading));
+      if (jump > 120) {
+        state.compassGlitchStreak = (state.compassGlitchStreak || 0) + 1;
+        if (state.compassGlitchStreak < 3) return;
+      } else {
+        state.compassGlitchStreak = 0;
+      }
+    }
+
     state.compassActive = true;
     state.heading = heading;
     // Apply immediately instead of waiting for the next GPS fix.
@@ -1236,7 +1277,6 @@
     if (name !== 'route') els.sheet.classList.remove('expanded');
     if (name !== 'drive') { setMapRotation(0); els.btnRecenter.hidden = true; }
     els.mapBack.style.display = name === 'drive' ? 'none' : 'flex';
-    syncDragging();
   }
 
   els.sheetHandle.addEventListener('click', () => els.sheet.classList.toggle('expanded'));
@@ -1293,7 +1333,6 @@
   els.btnRecenter.addEventListener('click', () => {
     state.followMode = true;
     els.btnRecenter.hidden = true;
-    syncDragging();
     if (state.lastPosition) {
       updateUserMarker(state.lastPosition.lat, state.lastPosition.lon, true);
       snapMapRotation(state.heading != null ? -state.heading : 0);
